@@ -25,7 +25,7 @@ export default function Layout() {
   };
 
   return (
-    <div className="fixed inset-0 bg-black flex justify-center w-full overflow-hidden">
+    <div className="h-[100dvh] bg-black flex justify-center w-full overflow-hidden">
       <div className="w-full max-w-6xl bg-black h-full relative flex flex-col md:flex-row shadow-2xl overflow-hidden">
         
         {/* Mobile Top App Bar */}
@@ -106,14 +106,14 @@ export default function Layout() {
         </aside>
 
         {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto w-full scroll-smooth custom-scroll relative pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-8 pt-[calc(4rem+env(safe-area-inset-top))] md:pt-8 px-0 md:px-8">
+        <main className="flex-1 min-h-0 overflow-y-auto w-full scroll-smooth custom-scroll relative pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-8 pt-[calc(4.5rem+env(safe-area-inset-top))] md:pt-8 px-0 md:px-8">
           <div className="max-w-2xl mx-auto h-full">
             <Outlet />
           </div>
         </main>
 
         {/* Mobile Bottom Navigation */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 px-8 py-4 bg-black/90 backdrop-blur-xl border-t border-white/10 flex justify-between items-center" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+        <nav className="md:hidden absolute bottom-0 left-0 right-0 z-50 px-8 py-4 bg-black/90 backdrop-blur-xl border-t border-white/10 flex justify-between items-center" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
           {navItems.map(({ path, label, icon: Icon }) => (
             <NavLink
               key={path}
