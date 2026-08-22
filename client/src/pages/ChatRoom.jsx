@@ -157,16 +157,16 @@ export default function ChatRoom() {
               >
                 {/* Story Reply Context */}
                 {msg.reply_to_story_url && (
-                  <div className="mb-2 bg-black/20 rounded-xl p-2 border border-white/10 flex items-center gap-3 w-max max-w-full">
-                    <div className="w-10 h-10 rounded-md overflow-hidden bg-black/50 flex-shrink-0">
+                  <div className="mb-2 flex flex-col w-48 rounded-xl overflow-hidden bg-black/20 border border-white/10">
+                    <div className="p-2 text-[10px] font-bold opacity-70 uppercase tracking-wider text-center bg-black/40 text-white">
+                      {isMe ? 'Replied to their story' : 'Replied to your story'}
+                    </div>
+                    <div className="w-full aspect-[9/16] bg-black">
                       {msg.reply_to_story_type === 'video' ? (
-                        <video src={getMediaUrl(msg.reply_to_story_url)} className="w-full h-full object-cover" />
+                        <video src={getMediaUrl(msg.reply_to_story_url)} className="w-full h-full object-cover" muted loop playsInline autoPlay />
                       ) : (
                         <img src={getMediaUrl(msg.reply_to_story_url)} className="w-full h-full object-cover" alt="Story" />
                       )}
-                    </div>
-                    <div className="flex flex-col truncate pr-2">
-                      <span className="text-[10px] font-bold uppercase tracking-wide opacity-50">Replied to story</span>
                     </div>
                   </div>
                 )}
