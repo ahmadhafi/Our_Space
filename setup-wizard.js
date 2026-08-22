@@ -4,8 +4,8 @@
  * Our Space — First-Run Setup Wizard
  * 
  * Run ONCE to:
- * 1. Create data directories (/var/data/ourspace/ and /var/data/ourspace/uploads/)
- * 2. Initialize the SQLite database with all tables
+ * 1. Create data directories (/var/data/ourspace/uploads/)
+ * 2. Initialize the Postgres database with all tables
  * 3. Seed two user accounts
  * 4. Write .setup-complete flag to prevent re-runs
  * 
@@ -82,16 +82,12 @@ async function main() {
   console.log('║     First-run account configuration      ║');
   console.log('╚══════════════════════════════════════════╝\n');
 
-  const dbPath = process.env.DB_PATH || '/var/data/ourspace/ourspace.db';
   const uploadsPath = process.env.UPLOADS_PATH || '/var/data/ourspace/uploads';
-  const dataDir = path.dirname(dbPath);
 
   // Step 1: Create directories
   console.log('📁 Step 1: Creating data directories...');
   try {
-    fs.mkdirSync(dataDir, { recursive: true });
     fs.mkdirSync(uploadsPath, { recursive: true });
-    console.log(`   ✅ ${dataDir}`);
     console.log(`   ✅ ${uploadsPath}\n`);
   } catch (err) {
     console.error(`   ❌ Failed to create directories: ${err.message}`);
@@ -101,13 +97,11 @@ async function main() {
 
   // Step 2: Initialize database
   console.log('🗄️  Step 2: Initializing database...');
-  const Database = require('better-sqlite3');
-  const db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-
+  const { getDb } = require('./server/db/connection');
+  const db = getDb();
+  
   const { initializeSchema } = require('./server/db/schema');
-  initializeSchema(db);
+  await initializeSchema(db);
   console.log('   ✅ All tables created.\n');
 
   // Step 3: Collect user info
@@ -162,43 +156,43 @@ async function main() {
   const hashB = await bcrypt.hash(passwordB, 12);
 
   const now = new Date().toISOString();
-  const insertUser = db.prepare(`
-    INSERT INTO users (username, password_hash, display_name, avatar, bio, join_date, last_username_change, theme_preset, accent_color, bg_color)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const insertLog = db.prepare(`
-    INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at)
-    VALUES (?, ?, ?, ?, ?)
-  `);
-
-  const seedTransaction = db.transaction(() => {
-    const resultA = insertUser.run(usernameA, hashA, usernameA, null, '', now, now, 'sakura', '#f9a8d4', '#fff0f5');
-    const resultB = insertUser.run(usernameB, hashB, usernameB, null, '', now, now, 'lavender', '#c084fc', '#f5f0ff');
-
-    insertLog.run(resultA.lastInsertRowid, 'USER_LOGIN', `${usernameA} account created via setup wizard`, '{}', now);
-    insertLog.run(resultB.lastInsertRowid, 'USER_LOGIN', `${usernameB} account created via setup wizard`, '{}', now);
-  });
 
   try {
-    seedTransaction();
+    const { rows: resultA } = await db.query(`
+      INSERT INTO users (username, password_hash, display_name, avatar, bio, join_date, last_username_change, theme_preset, accent_color, bg_color)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id
+    `, [usernameA, hashA, usernameA, null, '', now, now, 'sakura', '#f9a8d4', '#fff0f5']);
+    
+    const { rows: resultB } = await db.query(`
+      INSERT INTO users (username, password_hash, display_name, avatar, bio, join_date, last_username_change, theme_preset, accent_color, bg_color)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id
+    `, [usernameB, hashB, usernameB, null, '', now, now, 'lavender', '#c084fc', '#f5f0ff']);
+
+    await db.query(`
+      INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [resultA[0].id, 'USER_LOGIN', `${usernameA} account created via setup wizard`, '{}', now]);
+
+    await db.query(`
+      INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [resultB[0].id, 'USER_LOGIN', `${usernameB} account created via setup wizard`, '{}', now]);
+    
     console.log(`   ✅ User "${usernameA}" created.`);
     console.log(`   ✅ User "${usernameB}" created.\n`);
   } catch (err) {
-    if (err.message.includes('UNIQUE')) {
+    if (err.message.includes('unique constraint')) {
       console.error('   ❌ One or both usernames already exist in the database.');
-      console.error('   If you need to re-seed, delete the database file first.\n');
+      console.error('   If you need to re-seed, clear the database table first.\n');
     } else {
       console.error(`   ❌ Error seeding accounts: ${err.message}\n`);
     }
-    db.close();
     rl.close();
     process.exit(1);
   }
 
   // Step 5: Write flag
   fs.writeFileSync(SETUP_FLAG, `Setup completed at ${now}\nUsers: ${usernameA}, ${usernameB}\n`);
-  db.close();
   rl.close();
 
   console.log('╔══════════════════════════════════════════╗');

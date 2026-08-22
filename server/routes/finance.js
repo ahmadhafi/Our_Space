@@ -20,7 +20,7 @@ router.use(authenticateToken);
 // GET /api/finance?month=2026-08
 router.get('/',
   [query('month').optional().matches(/^\d{4}-\d{2}$/).withMessage('Month must be YYYY-MM format')],
-  (req, res) => {
+  async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ error: errors.array()[0].msg });
@@ -39,18 +39,18 @@ router.get('/',
       const actualEnd = mon === 12 ? `${year + 1}-01-01` : endDate;
 
       // Get all entries for the month
-      const entries = db.prepare(`
+      const { rows: entries } = await db.query(`
         SELECT 
           f.id, f.amount, f.type, f.category, f.note, f.date, f.split_type, f.created_at,
           u.id as user_id, u.username, u.display_name, u.avatar
         FROM finance_entries f
         JOIN users u ON f.user_id = u.id
-        WHERE f.date >= ? AND f.date < ?
+        WHERE f.date >= $1 AND f.date < $2
         ORDER BY f.date DESC, f.created_at DESC
-      `).all(startDate, actualEnd);
+      `, [startDate, actualEnd]);
 
       // Get budget for the month (group by category)
-      const budgetRows = db.prepare('SELECT category, amount FROM finance_budgets WHERE month = ?').all(month);
+      const { rows: budgetRows } = await db.query('SELECT category, amount FROM finance_budgets WHERE month = $1', [month]);
       const budgets = {};
       let totalBudget = 0;
       for (const row of budgetRows) {
@@ -118,7 +118,7 @@ router.get('/',
       let settlement = null;
       const userIds = Object.keys(sharedPaid).filter(k => !k.includes('_name'));
       if (userIds.length > 0) {
-        const allUsers = db.prepare('SELECT id, display_name, username, split_ratio_percent FROM users').all();
+        const { rows: allUsers } = await db.query('SELECT id, display_name, username, split_ratio_percent FROM users');
         const userA = allUsers[0];
         const userB = allUsers[1];
         
@@ -197,7 +197,7 @@ router.post('/',
     body('date').isISO8601().withMessage('Date must be a valid date'),
     body('split_type').optional().isIn(VALID_SPLIT_TYPES).withMessage('split_type must be personal or shared')
   ],
-  (req, res) => {
+  async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ error: errors.array()[0].msg });
@@ -207,39 +207,36 @@ router.post('/',
       const db = getDb();
       const { amount, type, category, note, date, split_type = 'personal' } = req.body;
       const now = new Date().toISOString();
-      let entryId;
 
-      const createTransaction = db.transaction(() => {
-        const result = db.prepare(
-          'INSERT INTO finance_entries (user_id, amount, type, category, note, date, split_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-        ).run(req.user.id, amount, type, category, note || '', date, split_type, now);
-        entryId = result.lastInsertRowid;
+      const { rows } = await db.query(
+        'INSERT INTO finance_entries (user_id, amount, type, category, note, date, split_type, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
+        [req.user.id, amount, type, category, note || '', date, split_type, now]
+      );
+      const entryId = rows[0].id;
 
-        const formattedAmount = `Rp ${amount.toLocaleString('id-ID')}`;
-        const splitText = split_type === 'shared' ? ' [Shared]' : '';
-        db.prepare(
-          'INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at) VALUES (?, ?, ?, ?, ?)'
-        ).run(
+      const formattedAmount = `Rp ${amount.toLocaleString('id-ID')}`;
+      const splitText = split_type === 'shared' ? ' [Shared]' : '';
+      await db.query(
+        'INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at) VALUES ($1, $2, $3, $4, $5)',
+        [
           req.user.id,
           'FINANCE_ENTRY_ADDED',
           `${req.user.username} added ${type}: ${formattedAmount} (${category})${splitText}`,
           JSON.stringify({ entry_id: Number(entryId), amount, type, category, split_type }),
           now
-        );
-      });
+        ]
+      );
 
-      createTransaction();
-
-      const entry = db.prepare(`
+      const { rows: entryRows } = await db.query(`
         SELECT 
           f.id, f.amount, f.type, f.category, f.note, f.date, f.created_at,
           u.id as user_id, u.username, u.display_name, u.avatar
         FROM finance_entries f
         JOIN users u ON f.user_id = u.id
-        WHERE f.id = ?
-      `).get(entryId);
+        WHERE f.id = $1
+      `, [entryId]);
 
-      res.status(201).json({ entry });
+      res.status(201).json({ entry: entryRows[0] });
     } catch (err) {
       console.error('Create finance entry error:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -250,12 +247,14 @@ router.post('/',
 // DELETE /api/finance/:id
 router.delete('/:id',
   [param('id').isInt().toInt()],
-  (req, res) => {
+  async (req, res) => {
     try {
       const db = getDb();
       const entryId = req.params.id;
 
-      const entry = db.prepare('SELECT id, user_id, amount, type, category FROM finance_entries WHERE id = ?').get(entryId);
+      const { rows } = await db.query('SELECT id, user_id, amount, type, category FROM finance_entries WHERE id = $1', [entryId]);
+      const entry = rows[0];
+
       if (!entry) {
         return res.status(404).json({ error: 'Entry not found' });
       }
@@ -263,22 +262,19 @@ router.delete('/:id',
         return res.status(403).json({ error: 'You can only delete your own entries unless you are an admin' });
       }
 
-      const deleteTransaction = db.transaction(() => {
-        db.prepare('DELETE FROM finance_entries WHERE id = ?').run(entryId);
+      await db.query('DELETE FROM finance_entries WHERE id = $1', [entryId]);
 
-        const formattedAmount = `Rp ${entry.amount.toLocaleString('id-ID')}`;
-        db.prepare(
-          'INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at) VALUES (?, ?, ?, ?, ?)'
-        ).run(
+      const formattedAmount = `Rp ${entry.amount.toLocaleString('id-ID')}`;
+      await db.query(
+        'INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at) VALUES ($1, $2, $3, $4, $5)',
+        [
           req.user.id,
           'FINANCE_ENTRY_DELETED',
           `${req.user.username} deleted ${entry.type}: ${formattedAmount} (${entry.category})`,
           JSON.stringify({ entry_id: entryId, amount: entry.amount, type: entry.type, category: entry.category }),
           new Date().toISOString()
-        );
-      });
-
-      deleteTransaction();
+        ]
+      );
 
       res.json({ message: 'Entry deleted' });
     } catch (err) {
@@ -295,7 +291,7 @@ router.post('/budget',
     body('amount').isInt({ min: 0 }).withMessage('Amount must be a positive integer'),
     body('category').optional().isIn([...VALID_CATEGORIES, 'Overall']).withMessage('Invalid category')
   ],
-  (req, res) => {
+  async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ error: errors.array()[0].msg });
@@ -305,11 +301,11 @@ router.post('/budget',
       const db = getDb();
       const { month, amount, category = 'Overall' } = req.body;
 
-      db.prepare(`
+      await db.query(`
         INSERT INTO finance_budgets (month, category, amount) 
-        VALUES (?, ?, ?) 
-        ON CONFLICT(month, category) DO UPDATE SET amount = excluded.amount
-      `).run(month, category, amount);
+        VALUES ($1, $2, $3) 
+        ON CONFLICT(month, category) DO UPDATE SET amount = EXCLUDED.amount
+      `, [month, category, amount]);
 
       res.json({ message: 'Budget updated successfully', month, category, amount });
     } catch (err) {
@@ -320,31 +316,31 @@ router.post('/budget',
 );
 
 // GET /api/finance/goals
-router.get('/goals', (req, res) => {
+router.get('/goals', async (req, res) => {
   try {
     const db = getDb();
-    const goals = db.prepare('SELECT * FROM finance_goals ORDER BY created_at DESC').all();
+    const { rows: goals } = await db.query('SELECT * FROM finance_goals ORDER BY created_at DESC');
     
     const goalIds = goals.map(g => g.id);
     if (goalIds.length > 0) {
-      const placeholders = goalIds.map(() => '?').join(',');
+      const placeholders = goalIds.map((_, i) => `$${i + 1}`).join(',');
       
       // Get all raw contributions
-      const allContributions = db.prepare(`
+      const { rows: allContributions } = await db.query(`
         SELECT c.id, c.goal_id, c.amount, c.instrument, c.created_at, u.display_name, u.username
         FROM finance_goal_contributions c
         JOIN users u ON c.user_id = u.id
         WHERE c.goal_id IN (${placeholders})
         ORDER BY c.created_at DESC
-      `).all(...goalIds);
+      `, goalIds);
 
       // Get summed contributions for instruments breakdown
-      const summed = db.prepare(`
+      const { rows: summed } = await db.query(`
         SELECT goal_id, instrument, SUM(amount) as total
         FROM finance_goal_contributions
         WHERE goal_id IN (${placeholders})
         GROUP BY goal_id, instrument
-      `).all(...goalIds);
+      `, goalIds);
 
       // Map contributions back to goals
       const contribMap = {};
@@ -357,7 +353,7 @@ router.get('/goals', (req, res) => {
 
       summed.forEach(c => {
         if (!contribMap[c.goal_id]) contribMap[c.goal_id] = {};
-        contribMap[c.goal_id][c.instrument] = c.total;
+        contribMap[c.goal_id][c.instrument] = parseInt(c.total);
       });
 
       goals.forEach(g => {
@@ -380,7 +376,7 @@ router.post('/goals',
     body('target_amount').isInt({ min: 1 }).withMessage('Target amount must be a positive integer'),
     body('deadline').optional().isISO8601().withMessage('Deadline must be a valid date')
   ],
-  (req, res) => {
+  async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ error: errors.array()[0].msg });
@@ -390,11 +386,12 @@ router.post('/goals',
       const db = getDb();
       const { title, target_amount, deadline } = req.body;
       
-      const result = db.prepare(
-        'INSERT INTO finance_goals (title, target_amount, deadline) VALUES (?, ?, ?)'
-      ).run(title, target_amount, deadline || null);
+      const { rows } = await db.query(
+        'INSERT INTO finance_goals (title, target_amount, deadline) VALUES ($1, $2, $3) RETURNING id',
+        [title, target_amount, deadline || null]
+      );
       
-      res.status(201).json({ id: result.lastInsertRowid, title, target_amount, current_amount: 0, deadline });
+      res.status(201).json({ id: rows[0].id, title, target_amount, current_amount: 0, deadline });
     } catch (err) {
       console.error('Create goal error:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -409,7 +406,7 @@ router.put('/goals/:id/contribute',
     body('amount').isInt({ min: 1 }).withMessage('Amount must be positive'),
     body('instrument').optional().isString().trim()
   ],
-  (req, res) => {
+  async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ error: errors.array()[0].msg });
@@ -420,20 +417,20 @@ router.put('/goals/:id/contribute',
       const goalId = req.params.id;
       const { amount, instrument = 'Cash' } = req.body;
       
-      const goal = db.prepare('SELECT current_amount FROM finance_goals WHERE id = ?').get(goalId);
+      const { rows } = await db.query('SELECT current_amount FROM finance_goals WHERE id = $1', [goalId]);
+      const goal = rows[0];
+      
       if (!goal) {
         return res.status(404).json({ error: 'Goal not found' });
       }
       
-      const transaction = db.transaction(() => {
-        db.prepare('UPDATE finance_goals SET current_amount = current_amount + ? WHERE id = ?').run(amount, goalId);
-        db.prepare('INSERT INTO finance_goal_contributions (goal_id, user_id, amount, instrument, created_at) VALUES (?, ?, ?, ?, ?)').run(
-          goalId, req.user.id, amount, instrument, new Date().toISOString()
-        );
-      });
-      transaction();
+      await db.query('UPDATE finance_goals SET current_amount = current_amount + $1 WHERE id = $2', [amount, goalId]);
+      await db.query(
+        'INSERT INTO finance_goal_contributions (goal_id, user_id, amount, instrument, created_at) VALUES ($1, $2, $3, $4, $5)',
+        [goalId, req.user.id, amount, instrument, new Date().toISOString()]
+      );
       
-      res.json({ message: 'Contribution added', id: goalId, new_amount: goal.current_amount + amount, instrument });
+      res.json({ message: 'Contribution added', id: goalId, new_amount: parseInt(goal.current_amount) + amount, instrument });
     } catch (err) {
       console.error('Contribute goal error:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -448,7 +445,7 @@ router.put('/goals/contributions/:id',
     body('amount').isInt({ min: 1 }).withMessage('Amount must be positive'),
     body('instrument').isString().trim()
   ],
-  (req, res) => {
+  async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ error: errors.array()[0].msg });
@@ -459,18 +456,17 @@ router.put('/goals/contributions/:id',
       const contribId = req.params.id;
       const { amount, instrument } = req.body;
       
-      const contrib = db.prepare('SELECT goal_id, amount FROM finance_goal_contributions WHERE id = ?').get(contribId);
+      const { rows } = await db.query('SELECT goal_id, amount FROM finance_goal_contributions WHERE id = $1', [contribId]);
+      const contrib = rows[0];
+
       if (!contrib) {
         return res.status(404).json({ error: 'Contribution not found' });
       }
       
       const diff = amount - contrib.amount;
       
-      const transaction = db.transaction(() => {
-        db.prepare('UPDATE finance_goal_contributions SET amount = ?, instrument = ? WHERE id = ?').run(amount, instrument, contribId);
-        db.prepare('UPDATE finance_goals SET current_amount = current_amount + ? WHERE id = ?').run(diff, contrib.goal_id);
-      });
-      transaction();
+      await db.query('UPDATE finance_goal_contributions SET amount = $1, instrument = $2 WHERE id = $3', [amount, instrument, contribId]);
+      await db.query('UPDATE finance_goals SET current_amount = current_amount + $1 WHERE id = $2', [diff, contrib.goal_id]);
       
       res.json({ message: 'Contribution updated' });
     } catch (err) {
@@ -483,21 +479,20 @@ router.put('/goals/contributions/:id',
 // DELETE /api/finance/goals/contributions/:id
 router.delete('/goals/contributions/:id',
   [param('id').isInt().toInt()],
-  (req, res) => {
+  async (req, res) => {
     try {
       const db = getDb();
       const contribId = req.params.id;
       
-      const contrib = db.prepare('SELECT goal_id, amount FROM finance_goal_contributions WHERE id = ?').get(contribId);
+      const { rows } = await db.query('SELECT goal_id, amount FROM finance_goal_contributions WHERE id = $1', [contribId]);
+      const contrib = rows[0];
+      
       if (!contrib) {
         return res.status(404).json({ error: 'Contribution not found' });
       }
       
-      const transaction = db.transaction(() => {
-        db.prepare('DELETE FROM finance_goal_contributions WHERE id = ?').run(contribId);
-        db.prepare('UPDATE finance_goals SET current_amount = current_amount - ? WHERE id = ?').run(contrib.amount, contrib.goal_id);
-      });
-      transaction();
+      await db.query('DELETE FROM finance_goal_contributions WHERE id = $1', [contribId]);
+      await db.query('UPDATE finance_goals SET current_amount = current_amount - $1 WHERE id = $2', [contrib.amount, contrib.goal_id]);
       
       res.json({ message: 'Contribution deleted' });
     } catch (err) {
@@ -510,18 +505,20 @@ router.delete('/goals/contributions/:id',
 // DELETE /api/finance/goals/:id
 router.delete('/goals/:id',
   [param('id').isInt().toInt()],
-  (req, res) => {
+  async (req, res) => {
     try {
       const db = getDb();
       const goalId = req.params.id;
       
-      const goal = db.prepare('SELECT id FROM finance_goals WHERE id = ?').get(goalId);
+      const { rows } = await db.query('SELECT id FROM finance_goals WHERE id = $1', [goalId]);
+      const goal = rows[0];
+      
       if (!goal) {
         return res.status(404).json({ error: 'Goal not found' });
       }
       
       // finance_goal_contributions has ON DELETE CASCADE for goal_id
-      db.prepare('DELETE FROM finance_goals WHERE id = ?').run(goalId);
+      await db.query('DELETE FROM finance_goals WHERE id = $1', [goalId]);
       
       res.json({ message: 'Goal deleted' });
     } catch (err) {

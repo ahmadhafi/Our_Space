@@ -8,5 +8,8 @@
     "build": "cd client && npm run build",
     "start": "pm2 start ecosystem.config.js",
     "setup": "node setup-wizard.js"
+  },
+  "dependencies": {
+    "@vercel/postgres": "^0.10.0"
   }
 }

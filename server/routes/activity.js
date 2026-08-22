@@ -27,7 +27,7 @@ router.get('/',
     query('end_date').optional().isISO8601().withMessage('End date must be a valid date'),
     query('page').optional().isInt({ min: 1 }).toInt()
   ],
-  (req, res) => {
+  async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ error: errors.array()[0].msg });
@@ -41,19 +41,20 @@ router.get('/',
 
       let whereClauses = [];
       let params = [];
+      let paramIndex = 1;
 
       if (req.query.user_id) {
-        whereClauses.push('a.user_id = ?');
+        whereClauses.push(`a.user_id = $${paramIndex++}`);
         params.push(req.query.user_id);
       }
 
       if (req.query.action_type) {
-        whereClauses.push('a.action_type = ?');
+        whereClauses.push(`a.action_type = $${paramIndex++}`);
         params.push(req.query.action_type);
       }
 
       if (req.query.start_date) {
-        whereClauses.push('a.created_at >= ?');
+        whereClauses.push(`a.created_at >= $${paramIndex++}`);
         params.push(req.query.start_date);
       }
 
@@ -61,13 +62,13 @@ router.get('/',
         // Add one day to include the end date fully
         const endDate = new Date(req.query.end_date);
         endDate.setDate(endDate.getDate() + 1);
-        whereClauses.push('a.created_at < ?');
+        whereClauses.push(`a.created_at < $${paramIndex++}`);
         params.push(endDate.toISOString());
       }
 
       const whereSQL = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
-      const logs = db.prepare(`
+      const logsQuery = `
         SELECT 
           a.id, a.action_type, a.description, a.metadata, a.created_at,
           u.id as user_id, u.username, u.display_name, u.avatar
@@ -75,15 +76,19 @@ router.get('/',
         JOIN users u ON a.user_id = u.id
         ${whereSQL}
         ORDER BY a.created_at DESC
-        LIMIT ? OFFSET ?
-      `).all(...params, limit, offset);
+        LIMIT $${paramIndex++} OFFSET $${paramIndex++}
+      `;
+      
+      const { rows: logs } = await db.query(logsQuery, [...params, limit, offset]);
 
-      const totalCount = db.prepare(`
+      const countQuery = `
         SELECT COUNT(*) as count FROM activity_logs a ${whereSQL}
-      `).get(...params).count;
+      `;
+      const { rows: countRows } = await db.query(countQuery, params);
+      const totalCount = parseInt(countRows[0].count);
 
       // Get both users for the filter dropdown
-      const users = db.prepare('SELECT id, username, display_name FROM users').all();
+      const { rows: users } = await db.query('SELECT id, username, display_name FROM users');
 
       res.json({
         logs: logs.map(log => ({
@@ -109,7 +114,7 @@ router.get('/',
 // DELETE /api/activity/:id
 router.delete('/:id',
   [param('id').isInt().toInt()],
-  (req, res) => {
+  async (req, res) => {
     try {
       if (!req.user.is_admin) {
         return res.status(403).json({ error: 'Only admins can delete activity logs' });
@@ -118,7 +123,7 @@ router.delete('/:id',
       const db = getDb();
       const logId = req.params.id;
       
-      db.prepare('DELETE FROM activity_logs WHERE id = ?').run(logId);
+      await db.query('DELETE FROM activity_logs WHERE id = $1', [logId]);
       
       res.json({ message: 'Activity log deleted' });
     } catch (err) {

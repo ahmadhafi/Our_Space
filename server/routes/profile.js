@@ -21,12 +21,14 @@ router.use(authenticateToken);
 // GET /api/profile/:username
 router.get('/:username',
   [param('username').trim().notEmpty()],
-  (req, res) => {
+  async (req, res) => {
     try {
       const db = getDb();
-      const user = db.prepare(
-        'SELECT id, username, display_name, avatar, bio, link, join_date, last_username_change, theme_preset, accent_color, bg_color, split_ratio_percent FROM users WHERE username = ?'
-      ).get(req.params.username);
+      const { rows } = await db.query(
+        'SELECT id, username, display_name, avatar, bio, link, join_date, last_username_change, theme_preset, accent_color, bg_color, split_ratio_percent FROM users WHERE username = $1',
+        [req.params.username]
+      );
+      const user = rows[0];
 
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
@@ -46,12 +48,12 @@ router.get('/:username',
 );
 
 // GET /api/profile — get both users for partner display
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const db = getDb();
-    const users = db.prepare(
+    const { rows: users } = await db.query(
       'SELECT id, username, display_name, avatar, bio, link, join_date FROM users'
-    ).all();
+    );
 
     res.json({ users });
   } catch (err) {
@@ -71,17 +73,18 @@ router.put('/',
     body('link').optional().trim().isLength({ max: 255 }).withMessage('Link must be under 255 characters'),
     body('split_ratio_percent').optional().isInt({ min: 0, max: 100 }).withMessage('Split ratio must be between 0 and 100')
   ],
-  (req, res) => {
+  async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      // Clean up avatar if uploaded
       if (req.file) { try { fs.unlinkSync(req.file.path); } catch (e) { /* ignore */ } }
       return res.status(400).json({ error: errors.array()[0].msg });
     }
 
     try {
       const db = getDb();
-      const currentUser = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+      const { rows } = await db.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
+      const currentUser = rows[0];
+      
       if (!currentUser) {
         return res.status(404).json({ error: 'User not found' });
       }
@@ -89,31 +92,26 @@ router.put('/',
       const updates = {};
       const changes = [];
 
-      // Display name
       if (req.body.display_name !== undefined) {
         updates.display_name = req.body.display_name;
         changes.push('display name');
       }
 
-      // Bio
       if (req.body.bio !== undefined) {
         updates.bio = req.body.bio;
         changes.push('bio');
       }
 
-      // Link
       if (req.body.link !== undefined) {
         updates.link = req.body.link;
         changes.push('link');
       }
 
-      // Split ratio
       if (req.body.split_ratio_percent !== undefined) {
         updates.split_ratio_percent = req.body.split_ratio_percent;
         changes.push('split ratio');
       }
 
-      // Username change (30-day cooldown)
       if (req.body.username && req.body.username !== currentUser.username) {
         const lastChange = new Date(currentUser.last_username_change);
         const now = new Date();
@@ -127,9 +125,8 @@ router.put('/',
           });
         }
 
-        // Check uniqueness
-        const existing = db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(req.body.username, req.user.id);
-        if (existing) {
+        const { rows: existing } = await db.query('SELECT id FROM users WHERE username = $1 AND id != $2', [req.body.username, req.user.id]);
+        if (existing.length > 0) {
           if (req.file) { try { fs.unlinkSync(req.file.path); } catch (e) { /* ignore */ } }
           return res.status(400).json({ error: 'Username is already taken' });
         }
@@ -139,9 +136,7 @@ router.put('/',
         changes.push('username');
       }
 
-      // Avatar
       if (req.file) {
-        // Delete old avatar if exists
         if (currentUser.avatar) {
           const uploadsPath = process.env.UPLOADS_PATH || (process.env.VERCEL ? '/tmp/uploads' : '/var/data/ourspace/uploads');
           try { fs.unlinkSync(path.join(uploadsPath, currentUser.avatar)); } catch (e) { /* ignore */ }
@@ -154,32 +149,29 @@ router.put('/',
         return res.status(400).json({ error: 'No changes provided' });
       }
 
-      // Build dynamic UPDATE query
-      const setClauses = Object.keys(updates).map(key => `${key} = ?`).join(', ');
+      const setClauses = Object.keys(updates).map((key, index) => `${key} = $${index + 1}`).join(', ');
       const values = Object.values(updates);
-
+      
       const now = new Date().toISOString();
 
-      const updateTransaction = db.transaction(() => {
-        db.prepare(`UPDATE users SET ${setClauses} WHERE id = ?`).run(...values, req.user.id);
+      await db.query(`UPDATE users SET ${setClauses} WHERE id = $${values.length + 1}`, [...values, req.user.id]);
 
-        db.prepare(
-          'INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at) VALUES (?, ?, ?, ?, ?)'
-        ).run(
+      await db.query(
+        'INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at) VALUES ($1, $2, $3, $4, $5)',
+        [
           req.user.id,
           'PROFILE_UPDATED',
           `${updates.username || currentUser.username} updated profile: ${changes.join(', ')}`,
           JSON.stringify({ changes, updates: Object.keys(updates) }),
           now
-        );
-      });
+        ]
+      );
 
-      updateTransaction();
-
-      // Return updated profile
-      const updatedUser = db.prepare(
-        'SELECT id, username, display_name, avatar, bio, link, join_date, last_username_change, theme_preset, accent_color, bg_color, split_ratio_percent FROM users WHERE id = ?'
-      ).get(req.user.id);
+      const { rows: updatedRows } = await db.query(
+        'SELECT id, username, display_name, avatar, bio, link, join_date, last_username_change, theme_preset, accent_color, bg_color, split_ratio_percent FROM users WHERE id = $1',
+        [req.user.id]
+      );
+      const updatedUser = updatedRows[0];
 
       res.json({ profile: { ...updatedUser, is_owner: true } });
     } catch (err) {
@@ -197,7 +189,7 @@ router.put('/theme',
     body('accent_color').matches(/^#[0-9a-fA-F]{6}$/).withMessage('Accent color must be a valid hex color'),
     body('bg_color').matches(/^#[0-9a-fA-F]{6}$/).withMessage('Background color must be a valid hex color')
   ],
-  (req, res) => {
+  async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ error: errors.array()[0].msg });
@@ -208,23 +200,21 @@ router.put('/theme',
       const { theme_preset, accent_color, bg_color } = req.body;
       const now = new Date().toISOString();
 
-      const themeTransaction = db.transaction(() => {
-        db.prepare(
-          'UPDATE users SET theme_preset = ?, accent_color = ?, bg_color = ? WHERE id = ?'
-        ).run(theme_preset, accent_color, bg_color, req.user.id);
+      await db.query(
+        'UPDATE users SET theme_preset = $1, accent_color = $2, bg_color = $3 WHERE id = $4',
+        [theme_preset, accent_color, bg_color, req.user.id]
+      );
 
-        db.prepare(
-          'INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at) VALUES (?, ?, ?, ?, ?)'
-        ).run(
+      await db.query(
+        'INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at) VALUES ($1, $2, $3, $4, $5)',
+        [
           req.user.id,
           'THEME_CHANGED',
           `${req.user.username} changed theme to ${theme_preset}`,
           JSON.stringify({ theme_preset, accent_color, bg_color }),
           now
-        );
-      });
-
-      themeTransaction();
+        ]
+      );
 
       res.json({ theme: { theme_preset, accent_color, bg_color } });
     } catch (err) {
@@ -248,7 +238,9 @@ router.put('/password',
 
     try {
       const db = getDb();
-      const user = db.prepare('SELECT id, password_hash FROM users WHERE id = ?').get(req.user.id);
+      const { rows } = await db.query('SELECT id, password_hash FROM users WHERE id = $1', [req.user.id]);
+      const user = rows[0];
+      
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
       }
@@ -260,7 +252,7 @@ router.put('/password',
 
       const newPasswordHash = await bcrypt.hash(req.body.newPassword, 10);
       
-      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newPasswordHash, req.user.id);
+      await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newPasswordHash, req.user.id]);
 
       res.json({ message: 'Password updated successfully' });
     } catch (err) {

@@ -71,7 +71,9 @@ router.post('/login',
       const db = getDb();
       const { username, password } = req.body;
 
-      const user = db.prepare('SELECT id, username, password_hash, display_name, avatar FROM users WHERE username = ?').get(username);
+      const { rows: users } = await db.query('SELECT id, username, password_hash, display_name, avatar FROM users WHERE username = $1', [username]);
+      const user = users[0];
+      
       if (!user) {
         return res.status(401).json({ error: 'Invalid username or password' });
       }
@@ -85,21 +87,17 @@ router.post('/login',
       const refreshToken = generateRefreshToken();
       const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-      // Store refresh token and log login in one transaction
-      const loginTransaction = db.transaction(() => {
-        // Clean up old refresh tokens for this user
-        db.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').run(user.id);
-        
-        // Store new refresh token
-        db.prepare('INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)').run(user.id, refreshToken, expiresAt);
-        
-        // Log activity
-        db.prepare(
-          'INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at) VALUES (?, ?, ?, ?, ?)'
-        ).run(user.id, 'USER_LOGIN', `${user.username} logged in`, '{}', new Date().toISOString());
-      });
-
-      loginTransaction();
+      // Clean up old refresh tokens for this user
+      await db.query('DELETE FROM refresh_tokens WHERE user_id = $1', [user.id]);
+      
+      // Store new refresh token
+      await db.query('INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)', [user.id, refreshToken, expiresAt]);
+      
+      // Log activity
+      await db.query(
+        'INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at) VALUES ($1, $2, $3, $4, $5)',
+        [user.id, 'USER_LOGIN', `${user.username} logged in`, '{}', new Date().toISOString()]
+      );
 
       setCookies(res, accessToken, refreshToken);
 
@@ -120,7 +118,7 @@ router.post('/login',
 );
 
 // POST /api/auth/refresh
-router.post('/refresh', (req, res) => {
+router.post('/refresh', async (req, res) => {
   const token = req.cookies?.refresh_token;
   if (!token) {
     return res.status(401).json({ error: 'No refresh token' });
@@ -128,7 +126,8 @@ router.post('/refresh', (req, res) => {
 
   try {
     const db = getDb();
-    const stored = db.prepare('SELECT * FROM refresh_tokens WHERE token = ?').get(token);
+    const { rows: tokens } = await db.query('SELECT * FROM refresh_tokens WHERE token = $1', [token]);
+    const stored = tokens[0];
 
     if (!stored) {
       clearCookies(res);
@@ -136,12 +135,14 @@ router.post('/refresh', (req, res) => {
     }
 
     if (new Date(stored.expires_at) < new Date()) {
-      db.prepare('DELETE FROM refresh_tokens WHERE id = ?').run(stored.id);
+      await db.query('DELETE FROM refresh_tokens WHERE id = $1', [stored.id]);
       clearCookies(res);
       return res.status(401).json({ error: 'Refresh token expired' });
     }
 
-    const user = db.prepare('SELECT id, username, display_name, avatar FROM users WHERE id = ?').get(stored.user_id);
+    const { rows: users } = await db.query('SELECT id, username, display_name, avatar FROM users WHERE id = $1', [stored.user_id]);
+    const user = users[0];
+    
     if (!user) {
       clearCookies(res);
       return res.status(401).json({ error: 'User not found' });
@@ -152,12 +153,8 @@ router.post('/refresh', (req, res) => {
     const newRefreshToken = generateRefreshToken();
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-    const refreshTransaction = db.transaction(() => {
-      db.prepare('DELETE FROM refresh_tokens WHERE id = ?').run(stored.id);
-      db.prepare('INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)').run(user.id, newRefreshToken, expiresAt);
-    });
-
-    refreshTransaction();
+    await db.query('DELETE FROM refresh_tokens WHERE id = $1', [stored.id]);
+    await db.query('INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)', [user.id, newRefreshToken, expiresAt]);
 
     setCookies(res, newAccessToken, newRefreshToken);
 
@@ -177,23 +174,20 @@ router.post('/refresh', (req, res) => {
 });
 
 // POST /api/auth/logout
-router.post('/logout', authenticateToken, (req, res) => {
+router.post('/logout', authenticateToken, async (req, res) => {
   try {
     const db = getDb();
     const refreshToken = req.cookies?.refresh_token;
 
-    const logoutTransaction = db.transaction(() => {
-      if (refreshToken) {
-        db.prepare('DELETE FROM refresh_tokens WHERE token = ?').run(refreshToken);
-      }
-      db.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').run(req.user.id);
+    if (refreshToken) {
+      await db.query('DELETE FROM refresh_tokens WHERE token = $1', [refreshToken]);
+    }
+    await db.query('DELETE FROM refresh_tokens WHERE user_id = $1', [req.user.id]);
 
-      db.prepare(
-        'INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at) VALUES (?, ?, ?, ?, ?)'
-      ).run(req.user.id, 'USER_LOGOUT', `${req.user.username} logged out`, '{}', new Date().toISOString());
-    });
-
-    logoutTransaction();
+    await db.query(
+      'INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at) VALUES ($1, $2, $3, $4, $5)',
+      [req.user.id, 'USER_LOGOUT', `${req.user.username} logged out`, '{}', new Date().toISOString()]
+    );
 
     clearCookies(res);
     res.json({ message: 'Logged out successfully' });
@@ -204,12 +198,14 @@ router.post('/logout', authenticateToken, (req, res) => {
 });
 
 // GET /api/auth/me
-router.get('/me', authenticateToken, (req, res) => {
+router.get('/me', authenticateToken, async (req, res) => {
   try {
     const db = getDb();
-    const user = db.prepare(
-      'SELECT id, username, display_name, avatar, bio, join_date, theme_preset, accent_color, bg_color, split_ratio_percent, is_admin FROM users WHERE id = ?'
-    ).get(req.user.id);
+    const { rows } = await db.query(
+      'SELECT id, username, display_name, avatar, bio, join_date, theme_preset, accent_color, bg_color, split_ratio_percent, is_admin FROM users WHERE id = $1',
+      [req.user.id]
+    );
+    const user = rows[0];
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
@@ -239,7 +235,9 @@ router.put('/password',
       const db = getDb();
       const { currentPassword, newPassword } = req.body;
 
-      const user = db.prepare('SELECT id, password_hash FROM users WHERE id = ?').get(req.user.id);
+      const { rows } = await db.query('SELECT id, password_hash FROM users WHERE id = $1', [req.user.id]);
+      const user = rows[0];
+      
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
       }
@@ -250,11 +248,12 @@ router.put('/password',
       }
 
       const newPasswordHash = await bcrypt.hash(newPassword, 10);
-      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newPasswordHash, req.user.id);
+      await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newPasswordHash, req.user.id]);
 
-      db.prepare(
-        'INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at) VALUES (?, ?, ?, ?, ?)'
-      ).run(req.user.id, 'USER_PASSWORD_CHANGE', `User changed their password`, '{}', new Date().toISOString());
+      await db.query(
+        'INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at) VALUES ($1, $2, $3, $4, $5)',
+        [req.user.id, 'USER_PASSWORD_CHANGE', `User changed their password`, '{}', new Date().toISOString()]
+      );
 
       res.json({ message: 'Password updated successfully' });
     } catch (err) {
