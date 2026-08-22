@@ -17,16 +17,14 @@
 
 html {
   scroll-behavior: smooth;
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
 }
 
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background-color: var(--color-bg);
   color: #ffffff;
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background-color 0.4s ease, color 0.4s ease;
