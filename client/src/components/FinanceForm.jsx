@@ -47,7 +47,7 @@ export default function FinanceForm({ onEntryCreated }) {
         category,
         note: note.trim(),
         date,
-        split_type: type === 'expense' ? splitType : 'personal'
+        split_type: splitType
       });
 
       // Reset
@@ -103,33 +103,31 @@ export default function FinanceForm({ onEntryCreated }) {
           </button>
         </div>
 
-        {/* Expense Split Type */}
-        {type === 'expense' && (
-          <div className="flex rounded-xl overflow-hidden border border-white/10 bg-black">
-            <button
-              type="button"
-              onClick={() => setSplitType('personal')}
-              className={`flex-1 py-2 text-xs font-bold transition-all ${
-                splitType === 'personal'
-                  ? 'bg-blue-500 text-white'
-                  : 'text-gray-400 hover:bg-white/5'
-              }`}
-            >
-              👤 Personal
-            </button>
-            <button
-              type="button"
-              onClick={() => setSplitType('shared')}
-              className={`flex-1 py-2 text-xs font-bold transition-all ${
-                splitType === 'shared'
-                  ? 'bg-purple-500 text-white'
-                  : 'text-gray-400 hover:bg-white/5'
-              }`}
-            >
-              🤝 Shared
-            </button>
-          </div>
-        )}
+        {/* Split Type */}
+        <div className="flex rounded-xl overflow-hidden border border-white/10 bg-black">
+          <button
+            type="button"
+            onClick={() => setSplitType('personal')}
+            className={`flex-1 py-2 text-xs font-bold transition-all ${
+              splitType === 'personal'
+                ? 'bg-blue-500 text-white'
+                : 'text-gray-400 hover:bg-white/5'
+            }`}
+          >
+            👤 Personal
+          </button>
+          <button
+            type="button"
+            onClick={() => setSplitType('shared')}
+            className={`flex-1 py-2 text-xs font-bold transition-all ${
+              splitType === 'shared'
+                ? 'bg-purple-500 text-white'
+                : 'text-gray-400 hover:bg-white/5'
+            }`}
+          >
+            🤝 Shared
+          </button>
+        </div>
 
         {/* Consultant Tip */}
         {type === 'expense' && splitType === 'shared' && (
