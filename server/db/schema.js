@@ -108,12 +108,7 @@ async function initializeSchema(sql) {
       CREATE TABLE IF NOT EXISTS activity_logs (
         id SERIAL PRIMARY KEY,
         user_id INTEGER NOT NULL,
-        action_type TEXT NOT NULL CHECK(action_type IN (
-          'POST_CREATED', 'POST_DELETED', 'COMMENT_ADDED',
-          'FINANCE_ENTRY_ADDED', 'FINANCE_ENTRY_DELETED',
-          'PROFILE_UPDATED', 'THEME_CHANGED',
-          'USER_LOGIN', 'USER_LOGOUT'
-        )),
+        action_type TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
         metadata TEXT NOT NULL DEFAULT '{}',
         created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -190,6 +185,12 @@ async function initializeSchema(sql) {
       }
     } catch (e) {
       console.log('[Postgres] Budget migration note:', e.message);
+    }
+
+    try {
+      await sql.query('ALTER TABLE activity_logs DROP CONSTRAINT IF EXISTS activity_logs_action_type_check');
+    } catch (e) {
+      console.log('[Postgres] activity_logs constraint note:', e.message);
     }
 
     try {
