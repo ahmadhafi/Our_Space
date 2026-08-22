@@ -64,15 +64,12 @@ router.post('/', requireAuth, upload.single('media'), async (req, res, next) => 
     if (req.file) {
       if (process.env.VERCEL) {
         // Upload to Vercel Blob
-        const fileBuffer = fs.readFileSync(req.file.path);
+        const fileBuffer = req.file.buffer;
         const blob = await put(`stories/${Date.now()}-${req.file.originalname}`, fileBuffer, {
           access: 'public',
           token: process.env.BLOB_READ_WRITE_TOKEN
         });
         file_path = blob.url;
-        
-        // Clean up temp file
-        try { fs.unlinkSync(req.file.path); } catch (e) {}
       } else {
         file_path = req.file.filename;
       }
