@@ -6,8 +6,13 @@ let initPromise = null;
 function ensureInitialized() {
   if (!initPromise) {
     initPromise = (async () => {
-      await initializeSchema(sql);
-      await seedDefaultUsers(sql);
+      try {
+        await initializeSchema(sql);
+        await seedDefaultUsers(sql);
+      } catch (err) {
+        initPromise = null;
+        throw err;
+      }
     })();
   }
   return initPromise;
@@ -35,6 +40,7 @@ async function seedDefaultUsers(db) {
     }
   } catch (err) {
     console.error('[Postgres Setup] Failed to auto-seed database:', err.message);
+    throw err;
   }
 }
 

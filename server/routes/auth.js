@@ -112,7 +112,7 @@ router.post('/login',
       });
     } catch (err) {
       console.error('Login error:', err);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ error: `Internal server error: ${err.message}` });
     }
   }
 );

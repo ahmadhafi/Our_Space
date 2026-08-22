@@ -142,6 +142,7 @@ async function initializeSchema(sql) {
     console.log('[Postgres] Schema initialized successfully');
   } catch (err) {
     console.error('[Postgres] Failed to initialize schema:', err);
+    throw err;
   }
 }
 
