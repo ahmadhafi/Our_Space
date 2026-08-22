@@ -252,7 +252,7 @@ router.put('/password',
 
       await db.query(
         'INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at) VALUES ($1, $2, $3, $4, $5)',
-        [req.user.id, 'USER_PASSWORD_CHANGE', `User changed their password`, '{}', new Date().toISOString()]
+        [req.user.id, 'PROFILE_UPDATED', `User changed their password`, '{}', new Date().toISOString()]
       );
 
       res.json({ message: 'Password updated successfully' });
