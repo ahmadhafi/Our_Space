@@ -1,6 +1,7 @@
-const { createPool } = require('@vercel/postgres');
-const sql = createPool({
-  connectionString: process.env.POSTGRES_URL || process.env.DATABASE_URL
+const { Pool } = require('pg');
+const sql = new Pool({
+  connectionString: process.env.POSTGRES_URL || process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
 });
 const { initializeSchema } = require('./schema');
 
