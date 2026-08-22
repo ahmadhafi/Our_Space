@@ -1,17 +1,19 @@
 const { sql } = require('@vercel/postgres');
 const { initializeSchema } = require('./schema');
 
-let isInitialized = false;
+let initPromise = null;
+
+function ensureInitialized() {
+  if (!initPromise) {
+    initPromise = (async () => {
+      await initializeSchema(sql);
+      await seedDefaultUsers(sql);
+    })();
+  }
+  return initPromise;
+}
 
 function getDb() {
-  if (!isInitialized) {
-    // Fire and forget schema initialization
-    initializeSchema(sql).then(() => {
-      // Seed users asynchronously after schema is created
-      seedDefaultUsers(sql);
-    });
-    isInitialized = true;
-  }
   return sql;
 }
 
@@ -36,4 +38,4 @@ async function seedDefaultUsers(db) {
   }
 }
 
-module.exports = { getDb };
+module.exports = { getDb, ensureInitialized };

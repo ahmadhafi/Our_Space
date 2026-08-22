@@ -10,7 +10,7 @@ const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
-const { getDb } = require('./db/connection');
+const { getDb, ensureInitialized } = require('./db/connection');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -38,7 +38,15 @@ app.use(cookieParser());
 app.set('trust proxy', 1);
 
 // ── Initialize Database ──
-getDb();
+app.use('/api', async (req, res, next) => {
+  try {
+    await ensureInitialized();
+    next();
+  } catch (err) {
+    console.error('Database initialization failed:', err);
+    res.status(500).json({ error: 'Database initialization failed' });
+  }
+});
 
 // ── Serve uploads ──
 const uploadsPath = process.env.UPLOADS_PATH || (process.env.VERCEL ? '/tmp/uploads' : '/var/data/ourspace/uploads');
