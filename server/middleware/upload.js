@@ -22,13 +22,16 @@ const MIME_MAP = {
   'image/png': 'image',
   'image/webp': 'image',
   'video/mp4': 'video',
+  'audio/mp4': 'audio',
   'audio/mpeg': 'audio',
   'audio/mp3': 'audio',
   'audio/wav': 'audio',
   'audio/wave': 'audio',
   'audio/x-wav': 'audio',
   'audio/webm': 'audio',
-  'audio/ogg': 'audio'
+  'video/webm': 'video',
+  'audio/ogg': 'audio',
+  'application/ogg': 'audio'
 };
 
 function getMediaType(mimetype) {

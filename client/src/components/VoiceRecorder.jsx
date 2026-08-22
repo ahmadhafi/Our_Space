@@ -104,9 +104,17 @@ export default function VoiceRecorder({ onRecordingComplete, onCancel }) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg'
-      });
+      const types = ['audio/webm', 'audio/mp4', 'audio/ogg'];
+      let mimeType = '';
+      for (const t of types) {
+        if (MediaRecorder.isTypeSupported(t)) {
+          mimeType = t;
+          break;
+        }
+      }
+
+      const options = mimeType ? { mimeType } : undefined;
+      const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
@@ -117,14 +125,15 @@ export default function VoiceRecorder({ onRecordingComplete, onCancel }) {
       };
 
       mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: mediaRecorder.mimeType });
+        const type = mediaRecorder.mimeType || 'audio/webm';
+        const blob = new Blob(chunksRef.current, { type });
         setAudioBlob(blob);
         setAudioUrl(URL.createObjectURL(blob));
         stream.getTracks().forEach(t => t.stop());
         stopVisualization();
       };
 
-      mediaRecorder.start(100);
+      mediaRecorder.start();
       setIsRecording(true);
       startTimer();
       startVisualization(stream);
@@ -144,8 +153,13 @@ export default function VoiceRecorder({ onRecordingComplete, onCancel }) {
 
   const handleConfirm = () => {
     if (audioBlob) {
-      const ext = audioBlob.type.includes('webm') ? 'webm' : 'ogg';
-      const file = new File([audioBlob], `voice-note-${Date.now()}.${ext}`, { type: audioBlob.type });
+      const type = audioBlob.type || 'audio/webm';
+      let ext = 'webm';
+      if (type.includes('mp4')) ext = 'm4a';
+      else if (type.includes('ogg')) ext = 'ogg';
+      else if (type.includes('wav')) ext = 'wav';
+      
+      const file = new File([audioBlob], `voice-note-${Date.now()}.${ext}`, { type });
       onRecordingComplete(file);
     }
   };
