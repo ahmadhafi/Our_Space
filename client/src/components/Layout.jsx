@@ -15,6 +15,7 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const { initTheme } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     if (user) initTheme(user);
@@ -30,6 +31,7 @@ export default function Layout() {
       <div className="w-full max-w-6xl bg-black min-h-screen relative flex flex-col md:flex-row shadow-2xl">
         
         {/* Mobile Top App Bar */}
+        {!location.pathname.startsWith('/chat/') && (
         <header 
           className="md:hidden fixed top-0 w-full z-50 px-4 pb-4 flex items-center justify-between bg-gradient-to-b from-black/80 to-transparent pointer-events-none"
           style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
@@ -52,12 +54,16 @@ export default function Layout() {
             </Link>
           </div>
 
-          <div className="pointer-events-auto">
+          <div className="flex items-center gap-2 pointer-events-auto">
+            <button onClick={() => navigate('/chat')} className="w-10 h-10 rounded-full bg-black/40 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/60 transition-colors">
+              <ChatIcon className="w-5 h-5" />
+            </button>
             <button onClick={handleLogout} className="w-10 h-10 rounded-full bg-black/40 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/60 transition-colors">
               <LogoutIcon className="w-5 h-5" />
             </button>
           </div>
         </header>
+        )}
 
         {/* Desktop Sidebar */}
         <aside className="hidden md:flex flex-col w-64 border-r border-[#333] bg-[#111] p-6 shrink-0 sticky top-0 h-screen overflow-y-auto z-10">
@@ -114,6 +120,7 @@ export default function Layout() {
         </main>
 
         {/* Mobile Bottom Navigation */}
+        {!location.pathname.startsWith('/chat/') && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 px-8 py-4 bg-black/90 backdrop-blur-xl border-t border-white/10 flex justify-between items-center" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
           {navItems.map(({ path, label, icon: Icon }) => (
             <NavLink
@@ -130,8 +137,17 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
+        )}
       </div>
     </div>
+  );
+}
+
+function ChatIcon({ className }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+    </svg>
   );
 }
 

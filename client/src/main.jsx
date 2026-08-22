@@ -9,6 +9,8 @@ import FeedPage from './pages/FeedPage';
 import FinancePage from './pages/FinancePage';
 import ProfilePage from './pages/ProfilePage';
 import ActivityPage from './pages/ActivityPage';
+import ChatList from './pages/ChatList';
+import ChatRoom from './pages/ChatRoom';
 import './index.css';
 
 function ProtectedRoute({ children }) {
@@ -73,6 +75,8 @@ function App() {
         <Route path="profile" element={<ProfilePage />} />
         <Route path="profile/:username" element={<ProfilePage />} />
         <Route path="activity" element={<ActivityPage />} />
+        <Route path="chat" element={<ChatList />} />
+        <Route path="chat/:id" element={<ChatRoom />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

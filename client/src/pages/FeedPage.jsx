@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { apiGet } from '../hooks/useApi';
 import CreatePost from '../components/CreatePost';
 import PostCard from '../components/PostCard';
+import StoryTray from '../components/StoryTray';
+import StoryViewer from '../components/StoryViewer';
+import CreateStory from '../components/CreateStory';
 
 export default function FeedPage() {
   const [posts, setPosts] = useState([]);
@@ -9,6 +12,9 @@ export default function FeedPage() {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [viewingStoryUser, setViewingStoryUser] = useState(null);
+  const [isCreatingStory, setIsCreatingStory] = useState(false);
+  const [refreshStoriesCounter, setRefreshStoriesCounter] = useState(0);
 
   const fetchPosts = useCallback(async (pageNum, append = false) => {
     try {
@@ -46,7 +52,29 @@ export default function FeedPage() {
   };
 
   return (
-    <div className="animate-fade-in px-4">
+    <div className="animate-fade-in px-4 relative">
+      
+      {/* Story UI */}
+      <StoryTray 
+        key={refreshStoriesCounter}
+        onStoryClick={(user) => setViewingStoryUser(user)} 
+        onCreateClick={() => setIsCreatingStory(true)} 
+      />
+
+      {viewingStoryUser && (
+        <StoryViewer 
+          user={viewingStoryUser} 
+          onClose={() => setViewingStoryUser(null)} 
+        />
+      )}
+
+      {isCreatingStory && (
+        <CreateStory 
+          onClose={() => setIsCreatingStory(false)} 
+          onCreated={() => setRefreshStoriesCounter(prev => prev + 1)} 
+        />
+      )}
+
       <div className="mb-6 mt-4">
         <CreatePost onPostCreated={handlePostCreated} />
       </div>

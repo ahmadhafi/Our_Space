@@ -129,6 +129,31 @@ async function initializeSchema(sql) {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS stories (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        media_type TEXT NOT NULL CHECK(media_type IN ('image', 'video', 'text')),
+        file_path TEXT,
+        text_content TEXT,
+        bg_color TEXT,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS messages (
+        id SERIAL PRIMARY KEY,
+        sender_id INTEGER NOT NULL,
+        receiver_id INTEGER NOT NULL,
+        text TEXT NOT NULL DEFAULT '',
+        media_type TEXT CHECK(media_type IN ('image', 'video', 'audio')),
+        file_path TEXT,
+        is_read BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+        FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
       -- Performance indexes
       CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_post_media_post_id ON post_media(post_id);
@@ -142,6 +167,10 @@ async function initializeSchema(sql) {
       CREATE INDEX IF NOT EXISTS idx_activity_type ON activity_logs(action_type);
       CREATE INDEX IF NOT EXISTS idx_refresh_token ON refresh_tokens(token);
       CREATE INDEX IF NOT EXISTS idx_finance_goal_contrib ON finance_goal_contributions(goal_id);
+      CREATE INDEX IF NOT EXISTS idx_stories_expires_at ON stories(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
+      CREATE INDEX IF NOT EXISTS idx_messages_receiver ON messages(receiver_id);
+      CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at ASC);
     `);
 
     // Migrations for existing tables
