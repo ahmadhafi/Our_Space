@@ -1,0 +1,12 @@
+{
+  "name": "ourspace",
+  "version": "1.0.0",
+  "description": "Our Space — Private two-person relationship app",
+  "private": true,
+  "scripts": {
+    "dev": "cd server && node index.js",
+    "build": "cd client && npm run build",
+    "start": "pm2 start ecosystem.config.js",
+    "setup": "node setup-wizard.js"
+  }
+}
