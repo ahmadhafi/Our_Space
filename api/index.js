@@ -7,3 +7,10 @@
 const app = require('../server/index');
 
 module.exports = app;
+
+// Disable Vercel's default body parser so Express and Multer can read the stream
+module.exports.config = {
+  api: {
+    bodyParser: false,
+  },
+};
