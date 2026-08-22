@@ -35,7 +35,9 @@ const MIME_MAP = {
 };
 
 function getMediaType(mimetype) {
-  return MIME_MAP[mimetype] || null;
+  if (!mimetype) return null;
+  const baseType = mimetype.split(';')[0].trim();
+  return MIME_MAP[baseType] || null;
 }
 
 const storage = multer.memoryStorage();
