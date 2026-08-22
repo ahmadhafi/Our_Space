@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { apiPost, apiDelete } from '../hooks/useApi';
 import CommentSection from './CommentSection';
 
 export default function PostCard({ post, onDelete, onLikeToggle }) {
@@ -23,7 +24,6 @@ export default function PostCard({ post, onDelete, onLikeToggle }) {
     setLikeCount(prev => liked ? prev - 1 : prev + 1);
 
     try {
-      const { apiPost } = await import('../hooks/useApi');
       const data = await apiPost(`/api/posts/${post.id}/like`, {});
       setLiked(data.liked);
       setLikeCount(data.like_count);
@@ -38,7 +38,6 @@ export default function PostCard({ post, onDelete, onLikeToggle }) {
 
   const handleDelete = async () => {
     try {
-      const { apiDelete } = await import('../hooks/useApi');
       await apiDelete(`/api/posts/${post.id}`);
       if (onDelete) onDelete(post.id);
     } catch (err) {
