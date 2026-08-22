@@ -7,11 +7,7 @@ const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
 
-const UPLOADS_PATH = process.env.UPLOADS_PATH || (process.env.VERCEL ? '/tmp/uploads' : '/var/data/ourspace/uploads');
-
-// Ensure uploads directory exists
-const fs = require('fs');
-fs.mkdirSync(UPLOADS_PATH, { recursive: true });
+// UPLOADS_PATH removed since we will use Vercel Blob directly.
 
 // File size limits in bytes
 const SIZE_LIMITS = {
@@ -39,16 +35,7 @@ function getMediaType(mimetype) {
   return MIME_MAP[mimetype] || null;
 }
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, UPLOADS_PATH);
-  },
-  filename: (req, file, cb) => {
-    const uniqueId = crypto.randomBytes(16).toString('hex');
-    const ext = path.extname(file.originalname).toLowerCase() || '.bin';
-    cb(null, `${Date.now()}-${uniqueId}${ext}`);
-  }
-});
+const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
   const mediaType = getMediaType(file.mimetype);
@@ -73,18 +60,16 @@ const upload = multer({
 
 // Middleware to check individual file sizes after upload
 function validateFileSizes(req, res, next) {
-  if (!req.files || req.files.length === 0) {
+  const files = req.files ? req.files : (req.file ? [req.file] : []);
+  if (files.length === 0) {
     return next();
   }
 
-  const fs = require('fs');
-  for (const file of req.files) {
+  for (const file of files) {
     const mediaType = getMediaType(file.mimetype);
     const limit = SIZE_LIMITS[mediaType];
     
     if (file.size > limit) {
-      // Delete the oversized file
-      try { fs.unlinkSync(file.path); } catch (e) { /* ignore */ }
       
       const limitMB = Math.round(limit / (1024 * 1024));
       const fileMB = (file.size / (1024 * 1024)).toFixed(1);

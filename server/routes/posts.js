@@ -9,6 +9,7 @@ const { body, param, query, validationResult } = require('express-validator');
 const { getDb } = require('../db/connection');
 const { authenticateToken } = require('../middleware/auth');
 const { upload, validateFileSizes, getMediaType } = require('../middleware/upload');
+const { put, del } = require('@vercel/blob');
 const fs = require('fs');
 const path = require('path');
 
@@ -115,7 +116,6 @@ router.post('/',
       const files = req.files || [];
 
       if ((!text || text.trim() === '') && files.length === 0) {
-        files.forEach(f => { try { fs.unlinkSync(f.path); } catch (e) { /* ignore */ } });
         return res.status(400).json({ error: 'Post must have text or media content' });
       }
 
@@ -129,9 +129,12 @@ router.post('/',
 
       for (const file of files) {
         const mediaType = getMediaType(file.mimetype);
+        const filename = `${Date.now()}-${file.originalname}`;
+        const blob = await put(`posts/${filename}`, file.buffer, { access: 'public' });
+        
         await db.query(
           'INSERT INTO post_media (post_id, media_type, file_path, original_name) VALUES ($1, $2, $3, $4)',
-          [postId, mediaType, file.filename, file.originalname]
+          [postId, mediaType, blob.url, file.originalname]
         );
       }
 
@@ -204,11 +207,12 @@ router.delete('/:id',
         [req.user.id, 'POST_DELETED', `${req.user.username} deleted a post`, JSON.stringify({ post_id: postId }), new Date().toISOString()]
       );
 
-      const uploadsPath = process.env.UPLOADS_PATH || (process.env.VERCEL ? '/tmp/uploads' : '/var/data/ourspace/uploads');
       for (const media of mediaFiles) {
-        try {
-          fs.unlinkSync(path.join(uploadsPath, media.file_path));
-        } catch (e) { /* file may not exist */ }
+        if (media.file_path.startsWith('http')) {
+          try {
+            await del(media.file_path);
+          } catch (e) { console.error('Blob delete error:', e); }
+        }
       }
 
       res.json({ message: 'Post deleted' });

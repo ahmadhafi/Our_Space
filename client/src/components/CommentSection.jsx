@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { apiGet } from '../hooks/useApi';
+import { getMediaUrl } from '../utils/media';
 
 export default function CommentSection({ postId, comments: initialComments, onCommentAdded, onCommentDeleted }) {
   const { user } = useAuth();
@@ -77,7 +78,7 @@ export default function CommentSection({ postId, comments: initialComments, onCo
           comments.map(comment => (
             <div key={comment.id} className="flex gap-2.5 group relative">
               {comment.avatar ? (
-                <img src={`/uploads/${comment.avatar}`} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-[#FFFC00]" />
+                <img src={getMediaUrl(comment.avatar)} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-[#FFFC00]" />
               ) : (
                 <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-black text-xs font-bold bg-[#FFFC00]">
                   {comment.username?.charAt(0).toUpperCase()}

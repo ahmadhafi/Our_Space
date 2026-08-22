@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { apiGet, apiPut } from '../hooks/useApi';
 import { useAuth } from '../hooks/useAuth';
 import { compressImage } from '../hooks/useImageCompress';
+import { getMediaUrl } from '../utils/media';
 import ThemePicker from '../components/ThemePicker';
 import PostCard from '../components/PostCard';
 
@@ -253,10 +254,10 @@ export default function ProfilePage() {
           <div className="relative group inline-block">
             {(avatarPreview || profile.avatar) ? (
               <img
-                src={avatarPreview || `/uploads/${profile.avatar}`}
+                src={avatarPreview || getMediaUrl(profile.avatar)}
                 alt=""
                 className="w-24 h-24 rounded-full object-cover shadow-md border-4 border-[#FFFC00] cursor-pointer"
-                onClick={() => window.open(avatarPreview || `/uploads/${profile.avatar}`, '_blank')}
+                onClick={() => window.open(avatarPreview || getMediaUrl(profile.avatar), '_blank')}
                 title="View profile picture"
               />
             ) : (
@@ -495,7 +496,7 @@ function PartnerLink({ currentUsername }) {
         className="flex items-center gap-3 hover:opacity-80 transition-opacity"
       >
         {partner.avatar ? (
-          <img src={`/uploads/${partner.avatar}`} alt="" className="w-12 h-12 rounded-full object-cover border-2 border-[#FFFC00]" />
+          <img src={getMediaUrl(partner.avatar)} alt="" className="w-12 h-12 rounded-full object-cover border-2 border-[#FFFC00]" />
         ) : (
           <div className="w-12 h-12 rounded-full flex items-center justify-center text-black font-bold bg-[#FFFC00]">
             {partner.username?.charAt(0).toUpperCase()}

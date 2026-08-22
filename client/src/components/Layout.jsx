@@ -1,5 +1,6 @@
-import { NavLink, Link, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { getMediaUrl } from '../utils/media';
 import { useTheme } from '../hooks/useTheme';
 import { useEffect } from 'react';
 
@@ -36,7 +37,7 @@ export default function Layout() {
           <div className="pointer-events-auto">
             <Link to="/profile">
               {user?.avatar ? (
-                <img src={`/uploads/${user.avatar}`} alt="" className="w-10 h-10 rounded-full object-cover border-2 border-transparent hover:border-[#FFFC00] transition-colors" />
+                <img src={getMediaUrl(user.avatar)} alt="" className="w-10 h-10 rounded-full object-cover border-2 border-transparent hover:border-[#FFFC00] transition-colors" />
               ) : (
                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold bg-[#FFFC00]">
                   {user?.username?.charAt(0).toUpperCase()}
@@ -88,7 +89,7 @@ export default function Layout() {
           <div className="mt-auto pt-6 border-t border-[#333] flex items-center justify-between">
             <Link to="/profile" className="flex items-center gap-3 group">
               {user?.avatar ? (
-                <img src={`/uploads/${user.avatar}`} alt="" className="w-10 h-10 rounded-full object-cover border-2 border-transparent group-hover:border-[#FFFC00] transition-colors" />
+                <img src={getMediaUrl(user.avatar)} alt="" className="w-10 h-10 rounded-full object-cover border-2 border-transparent group-hover:border-[#FFFC00] transition-colors" />
               ) : (
                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold bg-[#FFFC00]">
                   {user?.username?.charAt(0).toUpperCase()}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiGet } from '../hooks/useApi';
 import { useAuth } from '../hooks/useAuth';
+import { getMediaUrl } from '../utils/media';
 
 const ACTION_LABELS = {
   POST_CREATED: { emoji: '📝', label: 'Post Created' },
@@ -188,7 +189,7 @@ export default function ActivityPage() {
                 {/* Avatar with Emoji Badge */}
                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm flex-shrink-0 relative shadow-sm" style={{ background: 'var(--color-accent)', color: 'white' }}>
                   {log.avatar ? (
-                    <img src={`/uploads/${log.avatar}`} alt="" className="w-10 h-10 rounded-full object-cover" />
+                    <img src={getMediaUrl(log.avatar)} alt="" className="w-10 h-10 rounded-full object-cover" />
                   ) : (
                     <span className="font-bold text-xs">{log.username?.charAt(0).toUpperCase()}</span>
                   )}
