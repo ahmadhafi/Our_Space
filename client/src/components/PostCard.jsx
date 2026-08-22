@@ -127,7 +127,7 @@ export default function PostCard({ post, onDelete, onLikeToggle }) {
           </button>
           
           {showMenu && (
-            <div className="absolute right-0 mt-2 w-48 bg-[#2A2A2A] rounded-2xl shadow-xl z-50 overflow-hidden border border-[#333] animate-scale-in">
+            <div className="absolute right-0 mt-2 w-48 bg-[#2A2A2A] rounded-2xl shadow-xl z-50 overflow-hidden border border-[#333] animate-scale-in origin-top-right">
               {canDelete ? (
                 <>
                   {!showDeleteConfirm ? (

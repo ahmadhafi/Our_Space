@@ -17,9 +17,12 @@ const VALID_SPLIT_TYPES = ['personal', 'shared'];
 
 router.use(authenticateToken);
 
-// GET /api/finance?month=2026-08
+// GET /api/finance?month=2026-08&view=shared
 router.get('/',
-  [query('month').optional().matches(/^\d{4}-\d{2}$/).withMessage('Month must be YYYY-MM format')],
+  [
+    query('month').optional().matches(/^\d{4}-\d{2}$/).withMessage('Month must be YYYY-MM format'),
+    query('view').optional().isIn(['personal', 'shared']).withMessage('View must be personal or shared')
+  ],
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -31,6 +34,8 @@ router.get('/',
       const now = new Date();
       const month = req.query.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
+      const view = req.query.view || 'shared';
+
       // Parse year and month for date range
       const [year, mon] = month.split('-').map(Number);
       const startDate = `${month}-01`;
@@ -38,19 +43,45 @@ router.get('/',
       // Handle December -> January
       const actualEnd = mon === 12 ? `${year + 1}-01-01` : endDate;
 
-      // Get all entries for the month
-      const { rows: entries } = await db.query(`
-        SELECT 
-          f.id, f.amount, f.type, f.category, f.note, f.date, f.split_type, f.created_at,
-          u.id as user_id, u.username, u.display_name, u.avatar
-        FROM finance_entries f
-        JOIN users u ON f.user_id = u.id
-        WHERE f.date >= $1 AND f.date < $2
-        ORDER BY f.date DESC, f.created_at DESC
-      `, [startDate, actualEnd]);
+      // Get all entries for the month depending on the view
+      let entriesQuery = '';
+      let entriesParams = [startDate, actualEnd];
+      
+      if (view === 'personal') {
+        entriesQuery = `
+          SELECT 
+            f.id, f.amount, f.type, f.category, f.note, f.date, f.split_type, f.created_at,
+            u.id as user_id, u.username, u.display_name, u.avatar
+          FROM finance_entries f
+          JOIN users u ON f.user_id = u.id
+          WHERE f.date >= $1 AND f.date < $2 AND f.split_type = 'personal' AND f.user_id = $3
+          ORDER BY f.date DESC, f.created_at DESC
+        `;
+        entriesParams.push(req.user.id);
+      } else {
+        entriesQuery = `
+          SELECT 
+            f.id, f.amount, f.type, f.category, f.note, f.date, f.split_type, f.created_at,
+            u.id as user_id, u.username, u.display_name, u.avatar
+          FROM finance_entries f
+          JOIN users u ON f.user_id = u.id
+          WHERE f.date >= $1 AND f.date < $2 AND f.split_type = 'shared'
+          ORDER BY f.date DESC, f.created_at DESC
+        `;
+      }
+
+      const { rows: entries } = await db.query(entriesQuery, entriesParams);
 
       // Get budget for the month (group by category)
-      const { rows: budgetRows } = await db.query('SELECT category, amount FROM finance_budgets WHERE month = $1', [month]);
+      let budgetRows = [];
+      if (view === 'personal') {
+        const result = await db.query('SELECT category, amount FROM finance_budgets WHERE month = $1 AND type = $2 AND user_id = $3', [month, view, req.user.id]);
+        budgetRows = result.rows;
+      } else {
+        const result = await db.query('SELECT category, amount FROM finance_budgets WHERE month = $1 AND type = $2', [month, view]);
+        budgetRows = result.rows;
+      }
+      
       const budgets = {};
       let totalBudget = 0;
       for (const row of budgetRows) {
@@ -289,7 +320,8 @@ router.post('/budget',
   [
     body('month').matches(/^\d{4}-\d{2}$/).withMessage('Month must be YYYY-MM format'),
     body('amount').isInt({ min: 0 }).withMessage('Amount must be a positive integer'),
-    body('category').optional().isIn([...VALID_CATEGORIES, 'Overall']).withMessage('Invalid category')
+    body('category').optional().isIn([...VALID_CATEGORIES, 'Overall']).withMessage('Invalid category'),
+    body('type').optional().isIn(VALID_SPLIT_TYPES).withMessage('Type must be personal or shared')
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -299,13 +331,14 @@ router.post('/budget',
 
     try {
       const db = getDb();
-      const { month, amount, category = 'Overall' } = req.body;
+      const { month, amount, category = 'Overall', type = 'shared' } = req.body;
+      const user_id = type === 'personal' ? req.user.id : null;
 
       await db.query(`
-        INSERT INTO finance_budgets (month, category, amount) 
-        VALUES ($1, $2, $3) 
-        ON CONFLICT(month, category) DO UPDATE SET amount = EXCLUDED.amount
-      `, [month, category, amount]);
+        INSERT INTO finance_budgets (month, category, amount, type, user_id) 
+        VALUES ($1, $2, $3, $4, $5) 
+        ON CONFLICT(month, category, type, user_id) DO UPDATE SET amount = EXCLUDED.amount
+      `, [month, category, amount, type, user_id]);
 
       res.json({ message: 'Budget updated successfully', month, category, amount });
     } catch (err) {
@@ -316,10 +349,21 @@ router.post('/budget',
 );
 
 // GET /api/finance/goals
-router.get('/goals', async (req, res) => {
+router.get('/goals', 
+  [query('view').optional().isIn(['personal', 'shared']).withMessage('View must be personal or shared')],
+  async (req, res) => {
   try {
     const db = getDb();
-    const { rows: goals } = await db.query('SELECT * FROM finance_goals ORDER BY created_at DESC');
+    const view = req.query.view || 'shared';
+    
+    let goals = [];
+    if (view === 'personal') {
+      const result = await db.query('SELECT * FROM finance_goals WHERE type = $1 AND user_id = $2 ORDER BY created_at DESC', [view, req.user.id]);
+      goals = result.rows;
+    } else {
+      const result = await db.query('SELECT * FROM finance_goals WHERE type = $1 ORDER BY created_at DESC', [view]);
+      goals = result.rows;
+    }
     
     const goalIds = goals.map(g => g.id);
     if (goalIds.length > 0) {
@@ -374,7 +418,8 @@ router.post('/goals',
   [
     body('title').trim().isLength({ min: 1, max: 100 }).withMessage('Title is required'),
     body('target_amount').isInt({ min: 1 }).withMessage('Target amount must be a positive integer'),
-    body('deadline').optional().isISO8601().withMessage('Deadline must be a valid date')
+    body('deadline').optional().isISO8601().withMessage('Deadline must be a valid date'),
+    body('type').optional().isIn(VALID_SPLIT_TYPES).withMessage('Type must be personal or shared')
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -384,14 +429,15 @@ router.post('/goals',
 
     try {
       const db = getDb();
-      const { title, target_amount, deadline } = req.body;
+      const { title, target_amount, deadline, type = 'shared' } = req.body;
+      const user_id = type === 'personal' ? req.user.id : null;
       
       const { rows } = await db.query(
-        'INSERT INTO finance_goals (title, target_amount, deadline) VALUES ($1, $2, $3) RETURNING id',
-        [title, target_amount, deadline || null]
+        'INSERT INTO finance_goals (title, target_amount, deadline, type, user_id) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+        [title, target_amount, deadline || null, type, user_id]
       );
       
-      res.status(201).json({ id: rows[0].id, title, target_amount, current_amount: 0, deadline });
+      res.status(201).json({ id: rows[0].id, title, target_amount, current_amount: 0, deadline, type, user_id });
     } catch (err) {
       console.error('Create goal error:', err);
       res.status(500).json({ error: 'Internal server error' });

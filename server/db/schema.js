@@ -78,7 +78,9 @@ async function initializeSchema(sql) {
         month TEXT NOT NULL,
         category TEXT NOT NULL,
         amount INTEGER NOT NULL,
-        UNIQUE(month, category)
+        type TEXT NOT NULL DEFAULT 'shared' CHECK(type IN ('personal', 'shared')),
+        user_id INTEGER,
+        UNIQUE(month, category, type, user_id)
       );
 
       CREATE TABLE IF NOT EXISTS finance_goals (
@@ -87,6 +89,8 @@ async function initializeSchema(sql) {
         target_amount INTEGER NOT NULL,
         current_amount INTEGER NOT NULL DEFAULT 0,
         deadline TEXT,
+        type TEXT NOT NULL DEFAULT 'shared' CHECK(type IN ('personal', 'shared')),
+        user_id INTEGER,
         created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
       );
 
@@ -139,6 +143,33 @@ async function initializeSchema(sql) {
       CREATE INDEX IF NOT EXISTS idx_refresh_token ON refresh_tokens(token);
       CREATE INDEX IF NOT EXISTS idx_finance_goal_contrib ON finance_goal_contributions(goal_id);
     `);
+
+    // Migrations for existing tables
+    try {
+      await sql.query('ALTER TABLE finance_budgets DROP CONSTRAINT IF EXISTS finance_budgets_month_category_key');
+      await sql.query("ALTER TABLE finance_budgets ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'shared' CHECK(type IN ('personal', 'shared'))");
+      await sql.query('ALTER TABLE finance_budgets ADD COLUMN IF NOT EXISTS user_id INTEGER');
+      
+      // PostgreSQL doesn't support IF NOT EXISTS for constraints easily, so we catch errors
+      try {
+        // Drop it first to be safe if it exists
+        await sql.query('ALTER TABLE finance_budgets DROP CONSTRAINT IF EXISTS finance_budgets_unique_key');
+        // NULLS NOT DISTINCT requires PG 15+, Vercel Postgres supports it
+        await sql.query('ALTER TABLE finance_budgets ADD CONSTRAINT finance_budgets_unique_key UNIQUE NULLS NOT DISTINCT (month, category, type, user_id)');
+      } catch (e) {
+        console.log('[Postgres] Unique constraint note:', e.message);
+      }
+    } catch (e) {
+      console.log('[Postgres] Budget migration note:', e.message);
+    }
+
+    try {
+      await sql.query("ALTER TABLE finance_goals ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'shared' CHECK(type IN ('personal', 'shared'))");
+      await sql.query('ALTER TABLE finance_goals ADD COLUMN IF NOT EXISTS user_id INTEGER');
+    } catch (e) {
+      console.log('[Postgres] Goal migration note:', e.message);
+    }
+
     console.log('[Postgres] Schema initialized successfully');
   } catch (err) {
     console.error('[Postgres] Failed to initialize schema:', err);

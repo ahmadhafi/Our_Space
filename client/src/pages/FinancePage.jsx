@@ -21,6 +21,7 @@ const formatRp = (amount) => {
 export default function FinancePage() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
+  const [view, setView] = useState('personal');
   const [month, setMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -46,15 +47,15 @@ export default function FinancePage() {
   const fetchData = useCallback(async () => {
     try {
       const [financeRes, goalsRes] = await Promise.all([
-        apiGet(`/api/finance?month=${month}`),
-        apiGet('/api/finance/goals')
+        apiGet(`/api/finance?month=${month}&view=${view}`),
+        apiGet(`/api/finance/goals?view=${view}`)
       ]);
       setData(financeRes);
       setGoals(goalsRes.goals);
     } catch (err) {
       console.error('Failed to fetch finance data:', err);
     }
-  }, [month]);
+  }, [month, view]);
 
   useEffect(() => {
     setLoading(true);
@@ -80,7 +81,7 @@ export default function FinancePage() {
     e.preventDefault();
     if (!budgetInput) return;
     try {
-      await apiPost('/api/finance/budget', { month, amount: parseInt(budgetInput, 10), category: budgetCategory });
+      await apiPost('/api/finance/budget', { month, amount: parseInt(budgetInput, 10), category: budgetCategory, type: view });
       setShowBudgetForm(false);
       fetchData();
     } catch (err) {
@@ -92,7 +93,7 @@ export default function FinancePage() {
     e.preventDefault();
     if (!goalInput.title || !goalInput.target_amount) return;
     try {
-      await apiPost('/api/finance/goals', { ...goalInput, target_amount: parseInt(goalInput.target_amount, 10) });
+      await apiPost('/api/finance/goals', { ...goalInput, target_amount: parseInt(goalInput.target_amount, 10), type: view });
       setShowGoalForm(false);
       setGoalInput({ title: '', target_amount: '' });
       fetchData();
@@ -234,6 +235,26 @@ export default function FinancePage() {
         </div>
       )}
 
+      {/* Tabs */}
+      <div className="flex bg-[#1A1A1A] p-1 rounded-full mb-4 border border-white/5">
+        <button
+          onClick={() => setView('personal')}
+          className={`flex-1 py-2 text-sm font-bold rounded-full transition-all ${
+            view === 'personal' ? 'bg-[#FFFC00] text-black shadow-sm' : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          👤 My Personal
+        </button>
+        <button
+          onClick={() => setView('shared')}
+          className={`flex-1 py-2 text-sm font-bold rounded-full transition-all ${
+            view === 'shared' ? 'bg-[#FFFC00] text-black shadow-sm' : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          🤝 Shared
+        </button>
+      </div>
+
       {/* Month selector */}
       <div className="bg-[#1A1A1A] rounded-full p-4 mb-4 flex items-center justify-between border border-white/5">
         <button onClick={() => changeMonth(-1)} className="p-2 rounded-full hover:bg-white/5 transition-colors text-white">
@@ -318,26 +339,28 @@ export default function FinancePage() {
           </div>
         </div>
 
-        {/* Settlement Summary */}
-        <div className="bg-[#1A1A1A] rounded-[2rem] p-5 border border-white/5">
-          <h3 className="font-bold text-white text-sm mb-2 flex items-center gap-2">
-            🤝 Shared Expenses Split
-          </h3>
-          {data?.settlement ? (
-            data.settlement.settled ? (
-              <p className="text-green-400 text-sm font-bold">All settled up! No one owes anything.</p>
+        {/* Settlement Summary (Only visible in Shared View) */}
+        {view === 'shared' && (
+          <div className="bg-[#1A1A1A] rounded-[2rem] p-5 border border-white/5">
+            <h3 className="font-bold text-white text-sm mb-2 flex items-center gap-2">
+              🤝 Shared Expenses Split
+            </h3>
+            {data?.settlement ? (
+              data.settlement.settled ? (
+                <p className="text-green-400 text-sm font-bold">All settled up! No one owes anything.</p>
+              ) : (
+                <div>
+                  <p className="text-white text-sm">
+                    <span className="font-bold text-[#FFFC00]">{data.settlement.owes}</span> owes <span className="font-bold text-[#FFFC00]">{data.settlement.owedTo}</span>
+                  </p>
+                  <p className="text-2xl font-black text-red-400 mt-1">{formatRp(data.settlement.amount)}</p>
+                </div>
+              )
             ) : (
-              <div>
-                <p className="text-white text-sm">
-                  <span className="font-bold text-[#FFFC00]">{data.settlement.owes}</span> owes <span className="font-bold text-[#FFFC00]">{data.settlement.owedTo}</span>
-                </p>
-                <p className="text-2xl font-black text-red-400 mt-1">{formatRp(data.settlement.amount)}</p>
-              </div>
-            )
-          ) : (
-            <p className="text-xs text-gray-500">Add shared expenses to see split balances.</p>
-          )}
-        </div>
+              <p className="text-xs text-gray-500">Add shared expenses to see split balances.</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 50/30/20 Rule Summary */}
@@ -590,84 +613,103 @@ export default function FinancePage() {
             <p className="text-sm">No entries for this month</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-white/5">
-                  <th
-                    className="text-left p-4 font-bold text-gray-400 cursor-pointer hover:text-white select-none"
-                    onClick={() => toggleSort('date')}
-                  >
-                    Date {sortField === 'date' && (sortDir === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th className="text-left p-4 font-bold text-gray-400">Type</th>
-                  <th className="text-left p-4 font-bold text-gray-400">Split</th>
-                  <th className="text-left p-4 font-bold text-gray-400">Category</th>
-                  <th
-                    className="text-right p-4 font-bold text-gray-400 cursor-pointer hover:text-white select-none"
-                    onClick={() => toggleSort('amount')}
-                  >
-                    Amount {sortField === 'amount' && (sortDir === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th className="text-left p-4 font-bold text-gray-400">Note</th>
-                  <th className="text-left p-4 font-bold text-gray-400">By</th>
-                  <th className="p-4"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedEntries().map(entry => (
-                  <tr key={entry.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                    <td className="p-4 text-gray-300">
-                      {new Date(entry.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </td>
-                    <td className="p-4">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        entry.type === 'income' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                      }`}>
-                        {entry.type === 'income' ? '💰' : '💸'} {entry.type.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="p-4">
-                      {entry.type === 'expense' && entry.split_type === 'shared' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-400">
-                          🤝 SHARED
-                        </span>
-                      ) : entry.type === 'expense' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-400">
-                          👤 PERSONAL
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="p-4">
-                      <span className="flex items-center gap-1.5 text-gray-300">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: CATEGORY_COLORS[entry.category] }} />
-                        {entry.category}
-                      </span>
-                    </td>
-                    <td className={`p-4 text-right font-bold ${entry.type === 'income' ? 'text-green-400' : 'text-red-500'}`}>
-                      {entry.type === 'income' ? '+' : '-'}{formatRp(entry.amount)}
-                    </td>
-                    <td className="p-4 text-gray-400 max-w-[120px] truncate">{entry.note || '—'}</td>
-                    <td className="p-4">
-                      <span className="text-xs text-gray-500 font-bold">{entry.display_name || entry.username}</span>
-                    </td>
-                    <td className="p-4">
-                      {(entry.user_id === user?.id || user?.is_admin) && (
-                        <button
-                          onClick={() => handleDelete(entry.id)}
-                          className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
-                          title="Delete"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                          </svg>
-                        </button>
-                      )}
-                    </td>
+          <div>
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-white/5">
+                    <th
+                      className="text-left p-4 font-bold text-gray-400 cursor-pointer hover:text-white select-none"
+                      onClick={() => toggleSort('date')}
+                    >
+                      Date {sortField === 'date' && (sortDir === 'asc' ? '↑' : '↓')}
+                    </th>
+                    <th className="text-left p-4 font-bold text-gray-400">Type</th>
+                    <th className="text-left p-4 font-bold text-gray-400">Category</th>
+                    <th
+                      className="text-right p-4 font-bold text-gray-400 cursor-pointer hover:text-white select-none"
+                      onClick={() => toggleSort('amount')}
+                    >
+                      Amount {sortField === 'amount' && (sortDir === 'asc' ? '↑' : '↓')}
+                    </th>
+                    <th className="text-left p-4 font-bold text-gray-400">Note</th>
+                    <th className="text-left p-4 font-bold text-gray-400">By</th>
+                    <th className="p-4"></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {sortedEntries().map(entry => (
+                    <tr key={entry.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+                      <td className="p-4 text-gray-300">
+                        {new Date(entry.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </td>
+                      <td className="p-4">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          entry.type === 'income' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                        }`}>
+                          {entry.type === 'income' ? '💰' : '💸'} {entry.type.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <span className="flex items-center gap-1.5 text-gray-300">
+                          <span className="w-2.5 h-2.5 rounded-full" style={{ background: CATEGORY_COLORS[entry.category] }} />
+                          {entry.category}
+                        </span>
+                      </td>
+                      <td className={`p-4 text-right font-bold ${entry.type === 'income' ? 'text-green-400' : 'text-red-500'}`}>
+                        {entry.type === 'income' ? '+' : '-'}{formatRp(entry.amount)}
+                      </td>
+                      <td className="p-4 text-gray-400 max-w-[120px] truncate">{entry.note || '—'}</td>
+                      <td className="p-4">
+                        <span className="text-xs text-gray-500 font-bold">{entry.display_name || entry.username}</span>
+                      </td>
+                      <td className="p-4">
+                        {(entry.user_id === user?.id || user?.is_admin) && (
+                          <button
+                            onClick={() => handleDelete(entry.id)}
+                            className="p-1 rounded hover:bg-red-500/20 text-gray-400 hover:text-red-500 transition-colors"
+                            title="Delete"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                            </svg>
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile List View */}
+            <div className="block md:hidden">
+              {sortedEntries().map(entry => (
+                <div key={entry.id} className="p-4 border-b border-white/5 hover:bg-white/[0.02] flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: `${CATEGORY_COLORS[entry.category] || '#6b7280'}33` }}>
+                      <span className="text-lg">{entry.type === 'income' ? '💰' : '💸'}</span>
+                    </div>
+                    <div>
+                      <p className="text-white font-bold text-sm truncate max-w-[150px]">{entry.category}</p>
+                      <p className="text-xs text-gray-500">{new Date(entry.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} • {entry.note || 'No note'}</p>
+                      {view === 'shared' && <p className="text-[10px] text-gray-400 mt-0.5">By {entry.display_name || entry.username}</p>}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                    <p className={`font-bold text-sm ${entry.type === 'income' ? 'text-green-400' : 'text-red-500'}`}>
+                      {entry.type === 'income' ? '+' : '-'}{formatRp(entry.amount)}
+                    </p>
+                    {(entry.user_id === user?.id || user?.is_admin) && (
+                      <button onClick={() => handleDelete(entry.id)} className="text-[10px] text-red-500/80 hover:text-red-400 bg-red-500/10 px-2 py-0.5 rounded-lg">
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

@@ -25,11 +25,14 @@ export default function Layout() {
   };
 
   return (
-    <div className="h-[100dvh] bg-black flex justify-center w-full overflow-hidden">
+    <div className="fixed inset-0 bg-black flex justify-center w-full overflow-hidden">
       <div className="w-full max-w-6xl bg-black h-full relative flex flex-col md:flex-row shadow-2xl overflow-hidden">
         
         {/* Mobile Top App Bar */}
-        <header className="md:hidden absolute top-0 w-full z-50 px-4 py-3 flex items-center justify-between bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
+        <header 
+          className="md:hidden absolute top-0 w-full z-50 px-4 pb-4 flex items-center justify-between bg-gradient-to-b from-black/80 to-transparent pointer-events-none"
+          style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
+        >
           <div className="pointer-events-auto">
             <Link to="/profile">
               {user?.avatar ? (
@@ -103,7 +106,7 @@ export default function Layout() {
         </aside>
 
         {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto pb-[5.5rem] md:pb-8 pt-16 md:pt-8 px-0 md:px-8 w-full scroll-smooth custom-scroll relative">
+        <main className="flex-1 overflow-y-auto w-full scroll-smooth custom-scroll relative pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-8 pt-[calc(4rem+env(safe-area-inset-top))] md:pt-8 px-0 md:px-8">
           <div className="max-w-2xl mx-auto h-full">
             <Outlet />
           </div>

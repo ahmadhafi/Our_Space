@@ -250,12 +250,14 @@ export default function ProfilePage() {
       <div className="bg-[#1A1A1A] rounded-[2rem] p-6 border border-white/5">
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
           {/* Avatar */}
-          <div className="relative group">
+          <div className="relative group inline-block">
             {(avatarPreview || profile.avatar) ? (
               <img
                 src={avatarPreview || `/uploads/${profile.avatar}`}
                 alt=""
-                className="w-24 h-24 rounded-full object-cover shadow-md border-4 border-[#FFFC00]"
+                className="w-24 h-24 rounded-full object-cover shadow-md border-4 border-[#FFFC00] cursor-pointer"
+                onClick={() => window.open(avatarPreview || `/uploads/${profile.avatar}`, '_blank')}
+                title="View profile picture"
               />
             ) : (
               <div
@@ -269,9 +271,10 @@ export default function ProfilePage() {
                 <input ref={fileInputRef} type="file" accept="image/*" onChange={handleAvatarSelect} className="hidden" />
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="absolute inset-0 rounded-2xl bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-[#FFFC00] border-2 border-black flex items-center justify-center text-black shadow-lg hover:scale-110 transition-transform"
+                  title="Change Profile Picture"
                 >
-                  <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
                     <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
                   </svg>
