@@ -1,61 +1,26 @@
-/**
- * Client-side image compression via Canvas API
- * Max 1280px longest side, JPEG quality 0.75
- */
+import imageCompression from 'browser-image-compression';
 
-export function compressImage(file, maxSize = 1280, quality = 0.75) {
-  return new Promise((resolve, reject) => {
-    // Only compress images
-    if (!file.type.startsWith('image/')) {
-      resolve(file);
-      return;
-    }
+export async function compressImage(file, maxSizeMB = 1, maxWidthOrHeight = 1920) {
+  if (!file.type.startsWith('image/')) {
+    return file;
+  }
 
-    const img = new Image();
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+  const options = {
+    maxSizeMB,
+    maxWidthOrHeight,
+    useWebWorker: true,
+  };
 
-    img.onload = () => {
-      let { width, height } = img;
-
-      // Scale down if needed
-      if (width > maxSize || height > maxSize) {
-        if (width > height) {
-          height = Math.round((height * maxSize) / width);
-          width = maxSize;
-        } else {
-          width = Math.round((width * maxSize) / height);
-          height = maxSize;
-        }
-      }
-
-      canvas.width = width;
-      canvas.height = height;
-      ctx.drawImage(img, 0, 0, width, height);
-
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            resolve(file);
-            return;
-          }
-          // Create a new File from the blob with original name but .jpg extension
-          const name = file.name.replace(/\.[^.]+$/, '.jpg');
-          const compressed = new File([blob], name, { type: 'image/jpeg' });
-          resolve(compressed);
-        },
-        'image/jpeg',
-        quality
-      );
-    };
-
-    img.onerror = () => {
-      // If image can't be loaded, return original
-      resolve(file);
-    };
-
-    img.src = URL.createObjectURL(file);
-  });
+  try {
+    const compressedBlob = await imageCompression(file, options);
+    // Convert Blob to File object to maintain original file name
+    const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+    const name = file.name.replace(/\.[^.]+$/, `.${ext}`);
+    return new File([compressedBlob], name, { type: file.type });
+  } catch (error) {
+    console.error('Compression failed:', error);
+    return file;
+  }
 }
 
 export async function compressFiles(files) {

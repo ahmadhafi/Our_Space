@@ -64,7 +64,11 @@ export default function FeedPage() {
       {viewingStoryUser && (
         <StoryViewer 
           user={viewingStoryUser} 
-          onClose={() => setViewingStoryUser(null)} 
+          onClose={() => setViewingStoryUser(null)}
+          onStoryDeleted={() => {
+            setViewingStoryUser(null);
+            setRefreshStoriesCounter(prev => prev + 1);
+          }}
         />
       )}
 

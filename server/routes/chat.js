@@ -73,7 +73,7 @@ router.post('/:userId', requireAuth, upload.single('media'), async (req, res, ne
     const db = await getDb();
     const myId = req.user.id;
     const otherId = parseInt(req.params.userId, 10);
-    const { text, media_type } = req.body;
+    const { text, media_type, reply_to_story_url, reply_to_story_type } = req.body;
     
     let file_path = null;
 
@@ -92,10 +92,10 @@ router.post('/:userId', requireAuth, upload.single('media'), async (req, res, ne
     }
 
     const result = await db.query(`
-      INSERT INTO messages (sender_id, receiver_id, text, media_type, file_path)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO messages (sender_id, receiver_id, text, media_type, file_path, reply_to_story_url, reply_to_story_type)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING *
-    `, [myId, otherId, text || '', media_type || null, file_path]);
+    `, [myId, otherId, text || '', media_type || null, file_path, reply_to_story_url || null, reply_to_story_type || null]);
 
     res.status(201).json({ message: result.rows[0] });
   } catch (err) {

@@ -143,6 +143,8 @@ async function initializeSchema(sql) {
         text TEXT NOT NULL DEFAULT '',
         media_type TEXT CHECK(media_type IN ('image', 'video', 'audio')),
         file_path TEXT,
+        reply_to_story_url TEXT,
+        reply_to_story_type TEXT,
         is_read BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
         FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -198,6 +200,13 @@ async function initializeSchema(sql) {
       await sql.query('ALTER TABLE finance_goals ADD COLUMN IF NOT EXISTS user_id INTEGER');
     } catch (e) {
       console.log('[Postgres] Goal migration note:', e.message);
+    }
+
+    try {
+      await sql.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_story_url TEXT');
+      await sql.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_story_type TEXT');
+    } catch (e) {
+      console.log('[Postgres] Messages migration note:', e.message);
     }
 
     console.log('[Postgres] Schema initialized successfully');

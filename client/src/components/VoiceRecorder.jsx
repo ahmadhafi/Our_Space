@@ -39,6 +39,7 @@ export default function VoiceRecorder({ onRecordingComplete, onCancel }) {
   };
 
   const startVisualization = (stream) => {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
     const audioContext = new AudioContext();
     const analyser = audioContext.createAnalyser();
     const source = audioContext.createMediaStreamSource(stream);
@@ -106,10 +107,12 @@ export default function VoiceRecorder({ onRecordingComplete, onCancel }) {
 
       const types = ['audio/webm', 'audio/mp4', 'audio/ogg'];
       let mimeType = '';
-      for (const t of types) {
-        if (MediaRecorder.isTypeSupported(t)) {
-          mimeType = t;
-          break;
+      if (typeof MediaRecorder.isTypeSupported === 'function') {
+        for (const t of types) {
+          if (MediaRecorder.isTypeSupported(t)) {
+            mimeType = t;
+            break;
+          }
         }
       }
 

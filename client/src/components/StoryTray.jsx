@@ -1,25 +1,12 @@
 import { useState, useEffect } from 'react';
 import { apiGet } from '../hooks/useApi';
 import { getMediaUrl } from '../utils/media';
+import useSWR from 'swr';
 
 export default function StoryTray({ onStoryClick, onCreateClick }) {
-  const [usersWithStories, setUsersWithStories] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchStories();
-  }, []);
-
-  const fetchStories = async () => {
-    try {
-      const data = await apiGet('/api/stories');
-      setUsersWithStories(data.users || []);
-    } catch (err) {
-      console.error('Failed to fetch stories', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data, error } = useSWR('/api/stories', apiGet);
+  const usersWithStories = data?.users || [];
+  const loading = !data && !error;
 
   if (loading) return null;
 

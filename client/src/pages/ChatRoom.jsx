@@ -3,14 +3,15 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { apiGet, apiPost, apiPut } from '../hooks/useApi';
 import { useAuth } from '../hooks/useAuth';
 import { getMediaUrl } from '../utils/media';
+import { compressImage } from '../hooks/useImageCompress';
 import VoiceRecorder from '../components/VoiceRecorder';
+import useSWR from 'swr';
 
 export default function ChatRoom() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
   
-  const [messages, setMessages] = useState([]);
   const [otherUser, setOtherUser] = useState(null);
   const [inputText, setInputText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -18,21 +19,29 @@ export default function ChatRoom() {
   
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
-  const pollingRef = useRef(null);
 
-  // Initialize and poll
+  // Fetch chat info
   useEffect(() => {
-    fetchInitialData();
-    
-    // Poll for new messages every 3 seconds
-    pollingRef.current = setInterval(() => {
-      fetchMessages(false);
-    }, 3000);
-
-    return () => {
-      clearInterval(pollingRef.current);
-    };
+    apiGet('/api/chat').then(data => {
+      const u = data.chats.find(c => c.id === parseInt(id));
+      if (u) setOtherUser(u);
+    }).catch(console.error);
   }, [id]);
+
+  // Fetch messages with SWR polling
+  const { data, mutate } = useSWR(`/api/chat/${id}`, apiGet, { 
+    refreshInterval: 3000,
+    onSuccess: (data) => {
+      // Scroll to bottom on initial load if we don't have messages yet
+      if (messages.length === 0) {
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+      }
+    }
+  });
+
+  const messages = data?.messages || [];
 
   // Mark as read when messages change
   useEffect(() => {
@@ -44,33 +53,6 @@ export default function ChatRoom() {
     }
   }, [messages, id]);
 
-  const fetchInitialData = async () => {
-    try {
-      // Find the user info from the chat list
-      const data = await apiGet('/api/chat');
-      const u = data.chats.find(c => c.id === parseInt(id));
-      if (u) setOtherUser(u);
-
-      await fetchMessages(true);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const fetchMessages = async (scrollToBottom = false) => {
-    try {
-      const data = await apiGet(`/api/chat/${id}`);
-      setMessages(data.messages || []);
-      if (scrollToBottom) {
-        setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-        }, 100);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   const handleSendText = async (e) => {
     e?.preventDefault();
     if (!inputText.trim() || sending) return;
@@ -78,7 +60,7 @@ export default function ChatRoom() {
     setSending(true);
     try {
       const res = await apiPost(`/api/chat/${id}`, { text: inputText });
-      setMessages(prev => [...prev, res.message]);
+      mutate(prev => ({ ...prev, messages: [...(prev?.messages || []), res.message] }), false);
       setInputText('');
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     } catch (err) {
@@ -96,10 +78,11 @@ export default function ChatRoom() {
     try {
       const formData = new FormData();
       formData.append('media_type', file.type.startsWith('video') ? 'video' : 'image');
-      formData.append('media', file);
+      const compressedFile = await compressImage(file);
+      formData.append('media', compressedFile);
       
       const res = await apiPost(`/api/chat/${id}`, formData, true);
-      setMessages(prev => [...prev, res.message]);
+      mutate(prev => ({ ...prev, messages: [...(prev?.messages || []), res.message] }), false);
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     } catch (err) {
       console.error('Failed to send media', err);
@@ -110,19 +93,16 @@ export default function ChatRoom() {
     }
   };
 
-  const handleSendAudio = async (audioBlob) => {
+  const handleSendAudio = async (audioFile) => {
     setSending(true);
     setIsRecording(false);
     try {
       const formData = new FormData();
       formData.append('media_type', 'audio');
-      // Create a File object from the Blob
-      const ext = audioBlob.type.includes('mp4') ? 'mp4' : 'webm';
-      const file = new File([audioBlob], `voice-message.${ext}`, { type: audioBlob.type });
-      formData.append('media', file);
+      formData.append('media', audioFile);
 
       const res = await apiPost(`/api/chat/${id}`, formData, true);
-      setMessages(prev => [...prev, res.message]);
+      mutate(prev => ({ ...prev, messages: [...(prev?.messages || []), res.message] }), false);
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     } catch (err) {
       console.error('Failed to send audio', err);
@@ -175,11 +155,27 @@ export default function ChatRoom() {
                   isMe ? 'bg-[#FFFC00] text-black rounded-tr-sm' : 'bg-[#1A1A1A] text-white rounded-tl-sm border border-white/5'
                 }`}
               >
+                {/* Story Reply Context */}
+                {msg.reply_to_story_url && (
+                  <div className="mb-2 bg-black/20 rounded-xl p-2 border border-white/10 flex items-center gap-3 w-max max-w-full">
+                    <div className="w-10 h-10 rounded-md overflow-hidden bg-black/50 flex-shrink-0">
+                      {msg.reply_to_story_type === 'video' ? (
+                        <video src={getMediaUrl(msg.reply_to_story_url)} className="w-full h-full object-cover" />
+                      ) : (
+                        <img src={getMediaUrl(msg.reply_to_story_url)} className="w-full h-full object-cover" alt="Story" />
+                      )}
+                    </div>
+                    <div className="flex flex-col truncate pr-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wide opacity-50">Replied to story</span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Media */}
-                {msg.media_type === 'image' && (
+                {msg.media_type === 'image' && !msg.reply_to_story_url && (
                   <img src={getMediaUrl(msg.file_path)} alt="Attached" className="rounded-xl mb-2 max-w-full" />
                 )}
-                {msg.media_type === 'video' && (
+                {msg.media_type === 'video' && !msg.reply_to_story_url && (
                   <video src={getMediaUrl(msg.file_path)} controls className="rounded-xl mb-2 max-w-full max-h-[300px]" />
                 )}
                 {msg.media_type === 'audio' && (

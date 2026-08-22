@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { apiPost } from '../hooks/useApi';
+import { compressImage } from '../hooks/useImageCompress';
 
 const COLORS = [
   '#FF3366', '#9933FF', '#33CCFF', '#00C853', '#FF9900', '#1A1A1A'
@@ -31,8 +32,9 @@ export default function CreateStory({ onClose, onCreated }) {
     try {
       const formData = new FormData();
       if (type === 'media') {
+        const compressedMedia = await compressImage(media);
         formData.append('media_type', media.type.startsWith('video') ? 'video' : 'image');
-        formData.append('media', media);
+        formData.append('media', compressedMedia);
       } else {
         formData.append('media_type', 'text');
         formData.append('text_content', text);

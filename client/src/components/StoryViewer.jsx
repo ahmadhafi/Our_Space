@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { getMediaUrl } from '../utils/media';
 import { useAuth } from '../hooks/useAuth';
-import { apiPost } from '../hooks/useApi';
+import { apiPost, apiDelete } from '../hooks/useApi';
 
-export default function StoryViewer({ user, onClose }) {
+export default function StoryViewer({ user, onClose, onStoryDeleted }) {
   const { user: currentUser } = useAuth();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -90,7 +90,13 @@ export default function StoryViewer({ user, onClose }) {
 
     setSending(true);
     try {
-      await apiPost(`/api/chat/${user.user_id}`, { text: textToSend });
+      const payload = { 
+        text: textToSend,
+        reply_to_story_url: currentStory.media_type !== 'text' ? currentStory.file_path : null,
+        reply_to_story_type: currentStory.media_type
+      };
+      
+      await apiPost(`/api/chat/${user.user_id}`, payload);
       if (!textOverride) setReplyText('');
       // Flash a success or just close/resume
       setPaused(false);
@@ -99,6 +105,23 @@ export default function StoryViewer({ user, onClose }) {
       alert('Failed to send reply');
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm('Are you sure you want to delete this story?')) return;
+    
+    setPaused(true);
+    try {
+      await apiDelete(`/api/stories/${currentStory.id}`);
+      if (onStoryDeleted) {
+        onStoryDeleted(currentStory.id);
+      }
+      handleNext();
+    } catch (err) {
+      console.error('Failed to delete story', err);
+      alert('Failed to delete story');
+      setPaused(false);
     }
   };
 
@@ -154,7 +177,16 @@ export default function StoryViewer({ user, onClose }) {
           </div>
           <span className="text-white font-semibold text-sm shadow-sm drop-shadow-md">{user.display_name || user.username}</span>
         </div>
-        <button onClick={onClose} className="text-white p-2 text-2xl drop-shadow-md pointer-events-auto">✕</button>
+        <div className="flex items-center gap-2 pointer-events-auto">
+          {isOwnStory && (
+            <button onClick={handleDelete} className="text-white p-2 text-xl drop-shadow-md hover:text-red-500 transition-colors">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          )}
+          <button onClick={onClose} className="text-white p-2 text-2xl drop-shadow-md">✕</button>
+        </div>
       </div>
 
       {/* Tap Zones for Navigation */}
@@ -172,11 +204,11 @@ export default function StoryViewer({ user, onClose }) {
       </div>
 
       {/* Content */}
-      <div className="flex-1 w-full h-full max-w-lg mx-auto bg-gray-900 relative rounded-none overflow-hidden flex items-center justify-center">
+      <div className="flex-1 w-full h-full bg-gray-900 relative rounded-none overflow-hidden flex items-center justify-center">
         {currentStory.media_type === 'image' && (
           <img 
             src={getMediaUrl(currentStory.file_path)} 
-            className="w-full h-full object-cover sm:object-contain pointer-events-none" 
+            className="w-full h-full object-contain pointer-events-none" 
             alt="Story" 
           />
         )}
@@ -185,7 +217,7 @@ export default function StoryViewer({ user, onClose }) {
           <video
             ref={videoRef}
             src={getMediaUrl(currentStory.file_path)}
-            className="w-full h-full object-cover sm:object-contain pointer-events-none"
+            className="w-full h-full object-contain pointer-events-none"
             playsInline
             onTimeUpdate={handleVideoProgress}
             onEnded={handleNext}

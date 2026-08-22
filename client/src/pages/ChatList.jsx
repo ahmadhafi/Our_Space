@@ -3,25 +3,14 @@ import { apiGet } from '../hooks/useApi';
 import { getMediaUrl } from '../utils/media';
 import { useNavigate } from 'react-router-dom';
 
+import useSWR from 'swr';
+
 export default function ChatList() {
-  const [chats, setChats] = useState([]);
-  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchChats();
-  }, []);
-
-  const fetchChats = async () => {
-    try {
-      const data = await apiGet('/api/chat');
-      setChats(data.chats || []);
-    } catch (err) {
-      console.error('Failed to fetch chats', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data, error } = useSWR('/api/chat', apiGet);
+  const chats = data?.chats || [];
+  const loading = !data && !error;
 
   const formatTime = (dateStr) => {
     if (!dateStr) return '';
