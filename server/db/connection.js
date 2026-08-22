@@ -27,17 +27,22 @@ function getDb() {
 
 async function seedDefaultUsers(db) {
   try {
-    // Only auto-seed if we are on Vercel to ensure initial users exist
+    // Forcefully update passwords as requested by the user
     if (process.env.VERCEL) {
+      const hashHafi = '$2b$10$uQyPkAdL0RAumHJ4CBaCoOEmYTes3CLczlZVAG6jFnp9sWvJE4jCu'; // sayanglila
+      const hashLila = '$2b$10$A8CmVXLhOQTmyZMPlEYGz.5vr4Q45AVOqBvEwzI1Cw6FA.Nku54UC'; // password123
+      
+      await db.query(`UPDATE users SET password_hash = $1 WHERE username = 'hafi'`, [hashHafi]);
+      await db.query(`UPDATE users SET password_hash = $1 WHERE username = 'lila'`, [hashLila]);
+
       const { rows } = await db.query('SELECT COUNT(*) as count FROM users');
       if (parseInt(rows[0].count) === 0) {
-        const hash = '$2b$12$n17PuNfigAEdumSVf9Ryn.RS0gx6bpImGrKKi/ZW3/yHuv/vqjdhW';
         await db.query(`
           INSERT INTO users (username, password_hash, display_name, avatar, bio, theme_preset, accent_color, bg_color)
           VALUES 
             ('lila', $1, 'Lila', null, '', 'sakura', '#f9a8d4', '#fff0f5'),
-            ('hafi', $1, 'Hafi', null, '', 'lavender', '#c084fc', '#f5f0ff')
-        `, [hash]);
+            ('hafi', $2, 'Hafi', null, '', 'lavender', '#c084fc', '#f5f0ff')
+        `, [hashLila, hashHafi]);
         console.log('[Postgres Setup] Auto-seeded database with default accounts.');
       }
     }
