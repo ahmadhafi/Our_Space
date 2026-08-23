@@ -56,17 +56,25 @@ export default function FinancePage() {
   const [editContribInput, setEditContribInput] = useState({ amount: '', instrument: '' });
   const [editingEntryId, setEditingEntryId] = useState(null);
   const [editEntryInput, setEditEntryInput] = useState({ amount: '', type: 'expense', category: 'Food', note: '', date: '' });
+  const [netWorthData, setNetWorthData] = useState(null);
+  const [trendData, setTrendData] = useState(null);
+  const [isZbbMode, setIsZbbMode] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState(null);
 
   const INSTRUMENTS = ['Stocks', 'Deposit', 'Mutual Funds', 'Bank Account', 'Cash', 'Crypto', 'Other'];
 
   const fetchData = useCallback(async () => {
     try {
-      const [financeRes, goalsRes] = await Promise.all([
+      const [financeRes, goalsRes, netWorthRes, trendsRes] = await Promise.all([
         apiGet(`/api/finance?month=${month}&view=${view}`),
-        apiGet(`/api/finance/goals?view=${view}`)
+        apiGet(`/api/finance/goals?view=${view}`),
+        apiGet(`/api/finance/net-worth`),
+        apiGet(`/api/finance/trends?view=${view}`)
       ]);
       setData(financeRes);
       setGoals(goalsRes.goals);
+      setNetWorthData(netWorthRes);
+      setTrendData(trendsRes);
     } catch (err) {
       console.error('Failed to fetch finance data:', err);
     }
@@ -208,7 +216,11 @@ export default function FinancePage() {
 
   const sortedEntries = () => {
     if (!data?.entries) return [];
-    return [...data.entries].sort((a, b) => {
+    let entries = [...data.entries];
+    if (selectedCategory) {
+      entries = entries.filter(e => e.category === selectedCategory);
+    }
+    return entries.sort((a, b) => {
       let aVal, bVal;
       if (sortField === 'date') {
         aVal = a.date;
@@ -273,6 +285,33 @@ export default function FinancePage() {
         </button>
       </div>
 
+      {/* Net Worth Overview */}
+      {netWorthData && (
+        <div className="mb-6 bg-gradient-to-br from-[#1A1A1A] to-black rounded-[2rem] p-5 border border-white/10 relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-4 opacity-10">
+            <svg className="w-24 h-24 text-white" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.41 16.09V20h-2.67v-1.93c-1.71-.36-3.16-1.46-3.27-3.4h1.96c.1 1.05.82 1.87 2.65 1.87 1.96 0 2.4-.98 2.4-1.59 0-.83-.44-1.61-2.67-2.14-2.48-.6-3.47-1.78-3.47-3.29 0-1.56 1.02-2.77 2.4-3.15V4h2.67v1.95c1.64.39 2.66 1.49 2.78 3.05h-1.95c-.14-.93-.84-1.55-2.28-1.55-1.58 0-2.22.77-2.22 1.48 0 .8.55 1.42 2.76 1.95 2.59.63 3.38 1.94 3.38 3.42 0 1.57-1.12 2.76-2.47 3.14z"/>
+            </svg>
+          </div>
+          <div className="relative z-10">
+            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Total Net Worth</h2>
+            <p className={`text-3xl font-black mb-4 ${netWorthData.netWorth >= 0 ? 'text-[#FFFC00]' : 'text-red-400'}`}>
+              {formatRp(netWorthData.netWorth)}
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-[10px] text-gray-500 font-bold uppercase">Assets</p>
+                <p className="text-sm font-bold text-green-400">{formatRp(netWorthData.totalAssets)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-gray-500 font-bold uppercase">Liabilities</p>
+                <p className="text-sm font-bold text-red-400">{formatRp(netWorthData.totalLiabilities)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add entry form */}
       {showForm && (
         <div className="mb-4">
@@ -280,24 +319,44 @@ export default function FinancePage() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex bg-[#1A1A1A] p-1 rounded-full mb-4 border border-white/5">
-        <button
-          onClick={() => setView('personal')}
-          className={`flex-1 py-2 text-sm font-bold rounded-full transition-all ${
-            view === 'personal' ? 'bg-[#FFFC00] text-black shadow-sm' : 'text-gray-400 hover:text-white'
-          }`}
-        >
-          👤 My Personal
-        </button>
-        <button
-          onClick={() => setView('shared')}
-          className={`flex-1 py-2 text-sm font-bold rounded-full transition-all ${
-            view === 'shared' ? 'bg-[#FFFC00] text-black shadow-sm' : 'text-gray-400 hover:text-white'
-          }`}
-        >
-          🤝 Shared
-        </button>
+      <div className="flex flex-col sm:flex-row gap-2 mb-4">
+        <div className="flex bg-[#1A1A1A] p-1 rounded-full border border-white/5 flex-1">
+          <button
+            onClick={() => setView('personal')}
+            className={`flex-1 py-2 text-sm font-bold rounded-full transition-all ${
+              view === 'personal' ? 'bg-[#FFFC00] text-black shadow-sm' : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            👤 My Personal
+          </button>
+          <button
+            onClick={() => setView('shared')}
+            className={`flex-1 py-2 text-sm font-bold rounded-full transition-all ${
+              view === 'shared' ? 'bg-[#FFFC00] text-black shadow-sm' : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            🤝 Shared
+          </button>
+        </div>
+        
+        <div className="flex bg-[#1A1A1A] p-1 rounded-full border border-white/5 sm:w-48">
+          <button
+            onClick={() => setIsZbbMode(false)}
+            className={`flex-1 py-2 text-xs font-bold rounded-full transition-all ${
+              !isZbbMode ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            50/30/20
+          </button>
+          <button
+            onClick={() => setIsZbbMode(true)}
+            className={`flex-1 py-2 text-xs font-bold rounded-full transition-all ${
+              isZbbMode ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            ZBB Mode
+          </button>
+        </div>
       </div>
 
       {/* Month selector */}
@@ -316,28 +375,51 @@ export default function FinancePage() {
       </div>
 
       {/* Monthly Summary Card */}
-      {data?.summary && (
-        <div className="grid grid-cols-3 gap-3 mb-4">
-          <div className="bg-[#1A1A1A] rounded-[2rem] p-4 border border-white/5 text-center">
-            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Income</p>
-            <p className="text-lg font-black text-green-400">{formatRp(data.summary.totalIncome)}</p>
+      {data?.summary && (() => {
+        const [y, m] = month.split('-').map(Number);
+        const daysInMonth = new Date(y, m, 0).getDate();
+        const now = new Date();
+        const daysElapsed = (now.getFullYear() === y && now.getMonth() + 1 === m) ? now.getDate() : daysInMonth;
+        const burnRate = Math.round(data.summary.totalExpense / (daysElapsed || 1));
+        const projectedEOM = burnRate * daysInMonth;
+
+        return (
+          <div className="mb-4">
+            <div className="grid grid-cols-3 gap-3 mb-3">
+              <div className="bg-[#1A1A1A] rounded-[2rem] p-4 border border-white/5 text-center">
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Income</p>
+                <p className="text-lg font-black text-green-400">{formatRp(data.summary.totalIncome)}</p>
+              </div>
+              <div className="bg-[#1A1A1A] rounded-[2rem] p-4 border border-white/5 text-center">
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Expense</p>
+                <p className="text-lg font-black text-red-400">{formatRp(data.summary.totalExpense)}</p>
+              </div>
+              <div className={`rounded-[2rem] p-4 border text-center ${
+                data.summary.netBalance >= 0 
+                  ? 'bg-green-500/10 border-green-500/20' 
+                  : 'bg-red-500/10 border-red-500/20'
+              }`}>
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Net Balance</p>
+                <p className={`text-lg font-black ${data.summary.netBalance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {data.summary.netBalance >= 0 ? '+' : ''}{formatRp(data.summary.netBalance)}
+                </p>
+              </div>
+            </div>
+            
+            {/* Burn Rate row */}
+            <div className="flex justify-between items-center bg-[#1A1A1A] rounded-2xl p-3 border border-white/5 px-5">
+              <div>
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Daily Burn Rate</p>
+                <p className="text-sm font-bold text-white">{formatRp(burnRate)} / day</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Projected EOM Exp.</p>
+                <p className="text-sm font-bold text-gray-300">{formatRp(projectedEOM)}</p>
+              </div>
+            </div>
           </div>
-          <div className="bg-[#1A1A1A] rounded-[2rem] p-4 border border-white/5 text-center">
-            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Expense</p>
-            <p className="text-lg font-black text-red-400">{formatRp(data.summary.totalExpense)}</p>
-          </div>
-          <div className={`rounded-[2rem] p-4 border text-center ${
-            data.summary.netBalance >= 0 
-              ? 'bg-green-500/10 border-green-500/20' 
-              : 'bg-red-500/10 border-red-500/20'
-          }`}>
-            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Net Balance</p>
-            <p className={`text-lg font-black ${data.summary.netBalance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {data.summary.netBalance >= 0 ? '+' : ''}{formatRp(data.summary.netBalance)}
-            </p>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Budget & Settlement Row */}
       <div className="grid md:grid-cols-2 gap-4 mb-4">
@@ -473,32 +555,98 @@ export default function FinancePage() {
         )}
       </div>
 
-      {/* 50/30/20 Rule Summary */}
-      {data?.rule503020 && (
-        <div className="mb-6 grid grid-cols-3 gap-3">
-          <div className="bg-[#1A1A1A] rounded-[2rem] p-4 border border-white/5 text-center flex flex-col justify-center">
-            <p className="text-[10px] text-gray-500 font-bold tracking-wider uppercase mb-2">Needs (50%)</p>
-            <div className="h-2 bg-black rounded-full mb-3 overflow-hidden">
-              <div className="h-full bg-blue-500 transition-all" style={{ width: `${Math.min((data.rule503020.needs.spent / (data.rule503020.needs.target || 1)) * 100, 100)}%` }} />
+      {/* Budgeting Methodology View */}
+      {!isZbbMode ? (
+        /* 50/30/20 Rule Summary */
+        data?.rule503020 && (
+          <div className="mb-6 grid grid-cols-3 gap-3">
+            <div className="bg-[#1A1A1A] rounded-[2rem] p-4 border border-white/5 text-center flex flex-col justify-center">
+              <p className="text-[10px] text-gray-500 font-bold tracking-wider uppercase mb-2">Needs (50%)</p>
+              <div className="h-2 bg-black rounded-full mb-3 overflow-hidden">
+                <div className="h-full bg-blue-500 transition-all" style={{ width: `${Math.min((data.rule503020.needs.spent / (data.rule503020.needs.target || 1)) * 100, 100)}%` }} />
+              </div>
+              <p className="text-sm font-bold text-white mb-1">{formatRp(data.rule503020.needs.spent)}</p>
+              <p className="text-[10px] text-gray-500">Target: {formatRp(data.rule503020.needs.target)}</p>
             </div>
-            <p className="text-sm font-bold text-white mb-1">{formatRp(data.rule503020.needs.spent)}</p>
-            <p className="text-[10px] text-gray-500">Target: {formatRp(data.rule503020.needs.target)}</p>
+            <div className="bg-[#1A1A1A] rounded-[2rem] p-4 border border-white/5 text-center flex flex-col justify-center">
+              <p className="text-[10px] text-gray-500 font-bold tracking-wider uppercase mb-2">Wants (30%)</p>
+              <div className="h-2 bg-black rounded-full mb-3 overflow-hidden">
+                <div className="h-full bg-purple-500 transition-all" style={{ width: `${Math.min((data.rule503020.wants.spent / (data.rule503020.wants.target || 1)) * 100, 100)}%` }} />
+              </div>
+              <p className="text-sm font-bold text-white mb-1">{formatRp(data.rule503020.wants.spent)}</p>
+              <p className="text-[10px] text-gray-500">Target: {formatRp(data.rule503020.wants.target)}</p>
+            </div>
+            <div className="bg-[#1A1A1A] rounded-[2rem] p-4 border border-white/5 text-center flex flex-col justify-center">
+              <p className="text-[10px] text-gray-500 font-bold tracking-wider uppercase mb-2">Savings (20%)</p>
+              <div className="h-2 bg-black rounded-full mb-3 overflow-hidden">
+                <div className="h-full bg-green-500 transition-all" style={{ width: `${Math.min((data.rule503020.savings.spent / (data.rule503020.savings.target || 1)) * 100, 100)}%` }} />
+              </div>
+              <p className="text-sm font-bold text-white mb-1">{formatRp(data.rule503020.savings.spent)}</p>
+              <p className="text-[10px] text-gray-500">Target: {formatRp(data.rule503020.savings.target)}</p>
+            </div>
           </div>
-          <div className="bg-[#1A1A1A] rounded-[2rem] p-4 border border-white/5 text-center flex flex-col justify-center">
-            <p className="text-[10px] text-gray-500 font-bold tracking-wider uppercase mb-2">Wants (30%)</p>
-            <div className="h-2 bg-black rounded-full mb-3 overflow-hidden">
-              <div className="h-full bg-purple-500 transition-all" style={{ width: `${Math.min((data.rule503020.wants.spent / (data.rule503020.wants.target || 1)) * 100, 100)}%` }} />
+        )
+      ) : (
+        /* Zero-Based Budgeting (ZBB) View */
+        data?.summary && (() => {
+          const totalIncome = data.summary.totalIncome;
+          const totalBudgeted = data.budgets 
+            ? Object.entries(data.budgets).filter(([k]) => k !== 'Overall').reduce((s, [_, v]) => s + v, 0)
+            : 0;
+          // Calculate total savings contributions this month (using entries)
+          const totalSaved = data.entries.filter(e => e.type === 'expense' && ['Savings', 'Investment'].includes(e.category)).reduce((s, e) => s + e.amount, 0);
+          
+          const unassigned = totalIncome - totalBudgeted - totalSaved;
+
+          return (
+            <div className="mb-6 bg-[#1A1A1A] rounded-[2rem] p-5 border border-white/5">
+              <h3 className="font-bold text-white text-sm mb-4">Zero-Based Budgeting (ZBB)</h3>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                <div className="bg-black/50 p-3 rounded-2xl border border-white/5 text-center">
+                  <p className="text-[10px] text-gray-500 font-bold uppercase mb-1">Income</p>
+                  <p className="text-sm font-bold text-green-400">{formatRp(totalIncome)}</p>
+                </div>
+                <div className="bg-black/50 p-3 rounded-2xl border border-white/5 text-center">
+                  <p className="text-[10px] text-gray-500 font-bold uppercase mb-1">Budgeted</p>
+                  <p className="text-sm font-bold text-red-400">-{formatRp(totalBudgeted)}</p>
+                </div>
+                <div className="bg-black/50 p-3 rounded-2xl border border-white/5 text-center">
+                  <p className="text-[10px] text-gray-500 font-bold uppercase mb-1">Saved</p>
+                  <p className="text-sm font-bold text-blue-400">-{formatRp(totalSaved)}</p>
+                </div>
+                <div className={`p-3 rounded-2xl border text-center ${unassigned === 0 ? 'bg-green-500/20 border-green-500/50' : unassigned > 0 ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-red-500/20 border-red-500/50'}`}>
+                  <p className="text-[10px] text-white font-bold uppercase mb-1">Unassigned</p>
+                  <p className={`text-sm font-black ${unassigned === 0 ? 'text-green-400' : unassigned > 0 ? 'text-[#FFFC00]' : 'text-red-400'}`}>{formatRp(unassigned)}</p>
+                </div>
+              </div>
+              
+              <p className="text-[10px] text-gray-400 text-center">
+                {unassigned === 0 ? '🎉 Perfect! Every dollar has a job.' : 
+                 unassigned > 0 ? `You have ${formatRp(unassigned)} left to assign to a budget or savings.` : 
+                 `You've budgeted ${formatRp(Math.abs(unassigned))} more than you earned!`}
+              </p>
             </div>
-            <p className="text-sm font-bold text-white mb-1">{formatRp(data.rule503020.wants.spent)}</p>
-            <p className="text-[10px] text-gray-500">Target: {formatRp(data.rule503020.wants.target)}</p>
-          </div>
-          <div className="bg-[#1A1A1A] rounded-[2rem] p-4 border border-white/5 text-center flex flex-col justify-center">
-            <p className="text-[10px] text-gray-500 font-bold tracking-wider uppercase mb-2">Savings (20%)</p>
-            <div className="h-2 bg-black rounded-full mb-3 overflow-hidden">
-              <div className="h-full bg-green-500 transition-all" style={{ width: `${Math.min((data.rule503020.savings.spent / (data.rule503020.savings.target || 1)) * 100, 100)}%` }} />
-            </div>
-            <p className="text-sm font-bold text-white mb-1">{formatRp(data.rule503020.savings.spent)}</p>
-            <p className="text-[10px] text-gray-500">Target: {formatRp(data.rule503020.savings.target)}</p>
+          );
+        })()
+      )}
+
+      {/* Month-over-Month Trends */}
+      {trendData && trendData.length > 0 && (
+        <div className="bg-[#1A1A1A] rounded-[2rem] p-5 border border-white/5 mb-6">
+          <h3 className="font-bold text-white text-sm mb-4">6-Month Cash Flow Trends</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                <XAxis dataKey="month" stroke="#666" tick={{ fill: '#999', fontSize: 10 }} tickFormatter={(val) => val.split('-')[1]} />
+                <YAxis stroke="#666" tick={{ fill: '#999', fontSize: 10 }} tickFormatter={(val) => `Rp${val/1000}k`} />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
+                <Bar dataKey="income" name="Income" fill="#4ade80" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="expense" name="Expense" fill="#f87171" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
       )}
@@ -679,9 +827,19 @@ export default function FinancePage() {
                     outerRadius={90}
                     paddingAngle={3}
                     dataKey="value"
+                    onClick={(data, index) => {
+                      // data.name contains the category name in Recharts when clicked
+                      const category = data?.payload?.name || data?.name;
+                      setSelectedCategory(selectedCategory === category ? null : category);
+                    }}
+                    className="cursor-pointer"
                   >
                     {data.charts.categoryBreakdown.map((entry) => (
-                      <Cell key={entry.name} fill={CATEGORY_COLORS[entry.name] || '#6b7280'} />
+                      <Cell 
+                        key={entry.name} 
+                        fill={CATEGORY_COLORS[entry.name] || '#6b7280'} 
+                        opacity={selectedCategory && selectedCategory !== entry.name ? 0.3 : 1}
+                      />
                     ))}
                   </Pie>
                   <Tooltip content={<CustomTooltip />} />
@@ -713,8 +871,18 @@ export default function FinancePage() {
 
       {/* Detail table */}
       <div className="bg-[#1A1A1A] rounded-[2rem] overflow-hidden border border-white/5 mb-6">
-        <div className="p-5 border-b border-white/5">
-          <h3 className="font-bold text-sm text-white">All Entries</h3>
+        <div className="p-5 border-b border-white/5 flex justify-between items-center">
+          <h3 className="font-bold text-sm text-white">
+            {selectedCategory ? `${selectedCategory} Entries` : 'All Entries'}
+          </h3>
+          {selectedCategory && (
+            <button 
+              onClick={() => setSelectedCategory(null)} 
+              className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-1 rounded-md transition-colors"
+            >
+              Clear Filter
+            </button>
+          )}
         </div>
 
         {data?.entries?.length === 0 ? (

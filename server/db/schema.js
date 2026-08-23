@@ -151,6 +151,17 @@ async function initializeSchema(sql) {
         FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS finance_accounts (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL CHECK(type IN ('asset', 'liability')),
+        balance INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
       -- Performance indexes
       CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_post_media_post_id ON post_media(post_id);
@@ -168,6 +179,7 @@ async function initializeSchema(sql) {
       CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
       CREATE INDEX IF NOT EXISTS idx_messages_receiver ON messages(receiver_id);
       CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at ASC);
+      CREATE INDEX IF NOT EXISTS idx_finance_accounts_user ON finance_accounts(user_id);
     `);
 
     // Migrations for existing tables

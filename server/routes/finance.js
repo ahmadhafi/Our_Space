@@ -641,4 +641,188 @@ router.delete('/goals/:id',
   }
 );
 
+// ==========================================
+// NET WORTH & ACCOUNTS
+// ==========================================
+
+// GET /api/finance/net-worth
+router.get('/net-worth', async (req, res) => {
+  try {
+    const db = getDb();
+    // Assuming 'shared' for now, or personal. Let's just grab all accounts for the users if shared, or just personal
+    // Actually, accounts should probably just be all accounts since net worth is typically combined for couples using a shared app
+    const { rows } = await db.query(
+      'SELECT * FROM finance_accounts ORDER BY type ASC, name ASC'
+    );
+    
+    let totalAssets = 0;
+    let totalLiabilities = 0;
+    const assets = [];
+    const liabilities = [];
+
+    rows.forEach(acc => {
+      if (acc.type === 'asset') {
+        totalAssets += acc.balance;
+        assets.push(acc);
+      } else {
+        totalLiabilities += acc.balance;
+        liabilities.push(acc);
+      }
+    });
+
+    res.json({
+      netWorth: totalAssets - totalLiabilities,
+      totalAssets,
+      totalLiabilities,
+      assets,
+      liabilities
+    });
+  } catch (err) {
+    console.error('Fetch net worth error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/finance/accounts
+router.post('/accounts',
+  [
+    body('name').notEmpty().trim(),
+    body('type').isIn(['asset', 'liability']),
+    body('balance').isInt()
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ error: errors.array()[0].msg });
+
+    try {
+      const db = getDb();
+      const { name, type, balance } = req.body;
+      const { rows } = await db.query(
+        'INSERT INTO finance_accounts (user_id, name, type, balance) VALUES ($1, $2, $3, $4) RETURNING *',
+        [req.user.id, name, type, balance]
+      );
+      res.status(201).json(rows[0]);
+    } catch (err) {
+      console.error('Create account error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+// PUT /api/finance/accounts/:id
+router.put('/accounts/:id',
+  [
+    param('id').isInt().toInt(),
+    body('name').optional().notEmpty().trim(),
+    body('balance').optional().isInt()
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ error: errors.array()[0].msg });
+
+    try {
+      const db = getDb();
+      const accountId = req.params.id;
+      const { name, balance } = req.body;
+
+      const { rows } = await db.query('SELECT * FROM finance_accounts WHERE id = $1', [accountId]);
+      if (!rows.length) return res.status(404).json({ error: 'Account not found' });
+
+      let query = 'UPDATE finance_accounts SET updated_at = NOW()';
+      const params = [];
+      let paramIndex = 1;
+
+      if (name !== undefined) {
+        query += `, name = $${paramIndex}`;
+        params.push(name);
+        paramIndex++;
+      }
+      if (balance !== undefined) {
+        query += `, balance = $${paramIndex}`;
+        params.push(balance);
+        paramIndex++;
+      }
+
+      query += ` WHERE id = $${paramIndex} RETURNING *`;
+      params.push(accountId);
+
+      const { rows: updated } = await db.query(query, params);
+      res.json(updated[0]);
+    } catch (err) {
+      console.error('Update account error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+// DELETE /api/finance/accounts/:id
+router.delete('/accounts/:id',
+  [param('id').isInt().toInt()],
+  async (req, res) => {
+    try {
+      const db = getDb();
+      const { rows } = await db.query('DELETE FROM finance_accounts WHERE id = $1 RETURNING id', [req.params.id]);
+      if (!rows.length) return res.status(404).json({ error: 'Account not found' });
+      res.json({ message: 'Account deleted' });
+    } catch (err) {
+      console.error('Delete account error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+// ==========================================
+// TRENDS (Month-over-Month)
+// ==========================================
+
+// GET /api/finance/trends?view=shared
+router.get('/trends',
+  [query('view').optional().isIn(['personal', 'shared'])],
+  async (req, res) => {
+    try {
+      const db = getDb();
+      const view = req.query.view || 'shared';
+      
+      // Get the last 6 months
+      const now = new Date();
+      const months = [];
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+      }
+
+      const startDate = `${months[0]}-01`;
+      
+      let queryStr = 'SELECT type, date, amount FROM finance_entries WHERE date >= $1';
+      let queryParams = [startDate];
+      
+      if (view === 'personal') {
+        queryStr += ' AND user_id = $2';
+        queryParams.push(req.user.id);
+      }
+
+      const { rows } = await db.query(queryStr, queryParams);
+
+      const trendData = months.map(m => ({ month: m, income: 0, expense: 0 }));
+
+      rows.forEach(row => {
+        const rowMonth = row.date.substring(0, 7); // YYYY-MM
+        const monthIndex = months.indexOf(rowMonth);
+        if (monthIndex !== -1) {
+          if (row.type === 'income') {
+            trendData[monthIndex].income += row.amount;
+          } else {
+            trendData[monthIndex].expense += row.amount;
+          }
+        }
+      });
+
+      res.json(trendData);
+    } catch (err) {
+      console.error('Fetch trends error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
 module.exports = router;
