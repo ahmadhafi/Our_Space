@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 
 const EXPENSE_CATEGORY_GROUPS = {
-  'Needs (50% Target)': ['Food', 'Transport', 'Bills', 'Insurance', 'Healthcare'],
+  'Needs (50% Target)': ['Food', 'Transport', 'Bills', 'Rent', 'Insurance', 'Healthcare'],
   'Debt (50% Target)': ['Loan Payment', 'Credit Card'],
   'Wants (30% Target)': ['Entertainment', 'Subscription', 'Education', 'Other'],
   'Savings (20% Target)': ['Investment', 'Savings']

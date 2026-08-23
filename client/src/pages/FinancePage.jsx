@@ -5,7 +5,7 @@ import FinanceForm from '../components/FinanceForm';
 import { useAuth } from '../hooks/useAuth';
 
 const ALL_EXPENSE_CATEGORIES = [
-  'Food', 'Transport', 'Bills', 'Loan Payment', 'Credit Card', 'Insurance', 'Healthcare',
+  'Food', 'Transport', 'Bills', 'Rent', 'Loan Payment', 'Credit Card', 'Insurance', 'Healthcare',
   'Entertainment', 'Subscription', 'Education', 'Investment', 'Savings', 'Other'
 ];
 const ALL_INCOME_CATEGORIES = ['Salary', 'Bonus', 'Freelance', 'Gift', 'Investment Return', 'Other Income'];
@@ -14,6 +14,7 @@ const CATEGORY_COLORS = {
   Food: '#f97316',
   Transport: '#3b82f6',
   Bills: '#ef4444',
+  Rent: '#0284c7',
   'Loan Payment': '#dc2626',
   'Credit Card': '#be123c',
   Insurance: '#0ea5e9',
