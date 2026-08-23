@@ -60,6 +60,9 @@ export default function FinancePage() {
   const [trendData, setTrendData] = useState(null);
   const [isZbbMode, setIsZbbMode] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
+  
+  const [showAccounts, setShowAccounts] = useState(false);
+  const [accountInput, setAccountInput] = useState({ name: '', type: 'asset', balance: '' });
 
   const INSTRUMENTS = ['Stocks', 'Deposit', 'Mutual Funds', 'Bank Account', 'Cash', 'Crypto', 'Other'];
 
@@ -203,6 +206,32 @@ export default function FinancePage() {
     }
   };
 
+  const handleAddAccount = async (e) => {
+    e.preventDefault();
+    if (!accountInput.name || !accountInput.balance) return;
+    try {
+      await apiPost('/api/finance/accounts', {
+        name: accountInput.name,
+        type: accountInput.type,
+        balance: parseInt(accountInput.balance, 10)
+      });
+      setAccountInput({ name: '', type: 'asset', balance: '' });
+      fetchData();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleDeleteAccount = async (id) => {
+    if (!confirm('Delete this account?')) return;
+    try {
+      await apiDelete(`/api/finance/accounts/${id}`);
+      fetchData();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
   const changeMonth = (delta) => {
     const [y, m] = month.split('-').map(Number);
     const date = new Date(y, m - 1 + delta, 1);
@@ -294,7 +323,15 @@ export default function FinancePage() {
             </svg>
           </div>
           <div className="relative z-10">
-            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Total Net Worth</h2>
+            <div className="flex justify-between items-start mb-1">
+              <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Total Net Worth</h2>
+              <button 
+                onClick={() => setShowAccounts(!showAccounts)}
+                className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-1 rounded-md transition-colors font-bold"
+              >
+                {showAccounts ? 'Close Accounts' : 'Manage Accounts'}
+              </button>
+            </div>
             <p className={`text-3xl font-black mb-4 ${netWorthData.netWorth >= 0 ? 'text-[#FFFC00]' : 'text-red-400'}`}>
               {formatRp(netWorthData.netWorth)}
             </p>
@@ -308,6 +345,78 @@ export default function FinancePage() {
                 <p className="text-sm font-bold text-red-400">{formatRp(netWorthData.totalLiabilities)}</p>
               </div>
             </div>
+
+            {showAccounts && (
+              <div className="mt-6 pt-6 border-t border-white/10 animate-fade-in">
+                <form onSubmit={handleAddAccount} className="flex gap-2 mb-4 bg-black/50 p-3 rounded-xl border border-white/5">
+                  <select 
+                    value={accountInput.type} 
+                    onChange={e => setAccountInput({ ...accountInput, type: e.target.value })}
+                    className="input-field py-2 text-xs w-28"
+                  >
+                    <option value="asset">Asset (+)</option>
+                    <option value="liability">Liability (-)</option>
+                  </select>
+                  <input 
+                    type="text" 
+                    value={accountInput.name} 
+                    onChange={e => setAccountInput({ ...accountInput, name: e.target.value })}
+                    placeholder="Account Name (e.g., Bank BCA, Credit Card)"
+                    className="input-field py-2 text-xs flex-1"
+                  />
+                  <input 
+                    type="number" 
+                    value={accountInput.balance} 
+                    onChange={e => setAccountInput({ ...accountInput, balance: e.target.value })}
+                    placeholder="Balance (Rp)"
+                    className="input-field py-2 text-xs w-32"
+                    min="0"
+                  />
+                  <button type="submit" className="bg-[#FFFC00] text-black px-4 py-2 rounded-xl text-xs font-bold">Add</button>
+                </form>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <h3 className="text-xs font-bold text-gray-400 mb-2 uppercase tracking-wider">Your Assets</h3>
+                    <div className="space-y-2">
+                      {netWorthData.assets?.map(acc => (
+                        <div key={acc.id} className="bg-black/30 p-2 rounded-lg flex justify-between items-center group border border-white/5">
+                          <div>
+                            <p className="text-xs font-bold text-white">{acc.name}</p>
+                            <p className="text-[10px] text-green-400 font-bold">{formatRp(acc.balance)}</p>
+                          </div>
+                          <button onClick={() => handleDeleteAccount(acc.id)} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+                          </button>
+                        </div>
+                      ))}
+                      {(!netWorthData.assets || netWorthData.assets.length === 0) && (
+                        <p className="text-[10px] text-gray-500 italic">No assets added.</p>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-gray-400 mb-2 uppercase tracking-wider">Your Liabilities</h3>
+                    <div className="space-y-2">
+                      {netWorthData.liabilities?.map(acc => (
+                        <div key={acc.id} className="bg-black/30 p-2 rounded-lg flex justify-between items-center group border border-white/5">
+                          <div>
+                            <p className="text-xs font-bold text-white">{acc.name}</p>
+                            <p className="text-[10px] text-red-400 font-bold">{formatRp(acc.balance)}</p>
+                          </div>
+                          <button onClick={() => handleDeleteAccount(acc.id)} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+                          </button>
+                        </div>
+                      ))}
+                      {(!netWorthData.liabilities || netWorthData.liabilities.length === 0) && (
+                        <p className="text-[10px] text-gray-500 italic">No liabilities added.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
