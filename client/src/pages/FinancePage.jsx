@@ -302,6 +302,43 @@ export default function FinancePage() {
             </form>
           )}
 
+          {/* Overall Remaining Budget Card */}
+          {data?.budgets?.Overall && (() => {
+            const overallBudget = data.budgets.Overall;
+            const overallSpent = data.summary.totalExpense;
+            const remaining = overallBudget - overallSpent;
+            const isOver = remaining < 0;
+            const percent = Math.min((overallSpent / overallBudget) * 100, 100);
+
+            return (
+              <div className={`rounded-2xl p-4 mb-4 border ${isOver ? 'bg-red-500/10 border-red-500/30' : 'bg-green-500/10 border-green-500/30'}`}>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    {isOver ? '⚠️ Over Budget' : '💰 Remaining Budget'}
+                  </span>
+                  <span className="text-[10px] text-gray-500 font-bold">
+                    {formatRp(overallSpent)} spent of {formatRp(overallBudget)}
+                  </span>
+                </div>
+                <p className={`text-2xl font-black ${isOver ? 'text-red-400' : 'text-green-400'}`}>
+                  {isOver ? '-' : ''}{formatRp(Math.abs(remaining))}
+                </p>
+                <div className="h-2 bg-black rounded-full overflow-hidden mt-3">
+                  <div 
+                    className={`h-full transition-all ${isOver ? 'bg-red-500' : 'bg-green-500'}`} 
+                    style={{ width: `${percent}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-gray-500 mt-2">
+                  {isOver 
+                    ? `You've exceeded your overall budget by ${formatRp(Math.abs(remaining))}`
+                    : `You can still spend ${formatRp(remaining)} this month`
+                  }
+                </p>
+              </div>
+            );
+          })()}
+
           <div className="space-y-4">
             {data?.budgets && Object.entries(data.budgets).map(([cat, amount]) => {
               // Calculate spent for this category
@@ -313,6 +350,7 @@ export default function FinancePage() {
               }
               const percent = Math.min((spent / amount) * 100, 100);
               const isOver = spent > amount;
+              const remaining = amount - spent;
 
               return (
                 <div key={cat}>
@@ -329,7 +367,10 @@ export default function FinancePage() {
                       style={{ width: `${percent}%` }}
                     />
                   </div>
-                  {isOver && <p className="text-red-400 text-[10px] mt-1">Over budget by {formatRp(spent - amount)}!</p>}
+                  {isOver 
+                    ? <p className="text-red-400 text-[10px] mt-1">Over budget by {formatRp(Math.abs(remaining))}!</p>
+                    : <p className="text-green-400/70 text-[10px] mt-1">Remaining: {formatRp(remaining)}</p>
+                  }
                 </div>
               );
             })}
