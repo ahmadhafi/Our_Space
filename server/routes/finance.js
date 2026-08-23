@@ -315,6 +315,72 @@ router.delete('/:id',
   }
 );
 
+// PUT /api/finance/:id
+router.put('/:id',
+  [
+    param('id').isInt().toInt(),
+    body('amount').isInt({ min: 1 }).withMessage('Amount must be a positive integer'),
+    body('type').isIn(['income', 'expense']).withMessage('Type must be income or expense'),
+    body('category').isIn(VALID_CATEGORIES).withMessage(`Category must be one of: ${VALID_CATEGORIES.join(', ')}`),
+    body('note').optional().trim().isLength({ max: 500 }).withMessage('Note must be under 500 characters'),
+    body('date').isISO8601().withMessage('Date must be a valid date')
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: errors.array()[0].msg });
+    }
+
+    try {
+      const db = getDb();
+      const entryId = req.params.id;
+
+      const { rows } = await db.query('SELECT id, user_id, amount, type, category FROM finance_entries WHERE id = $1', [entryId]);
+      const entry = rows[0];
+
+      if (!entry) {
+        return res.status(404).json({ error: 'Entry not found' });
+      }
+      if (entry.user_id !== req.user.id && !req.user.is_admin) {
+        return res.status(403).json({ error: 'You can only edit your own entries unless you are an admin' });
+      }
+
+      const { amount, type, category, note, date } = req.body;
+
+      await db.query(
+        'UPDATE finance_entries SET amount = $1, type = $2, category = $3, note = $4, date = $5 WHERE id = $6',
+        [amount, type, category, note || '', date, entryId]
+      );
+
+      const formattedAmount = `Rp ${amount.toLocaleString('id-ID')}`;
+      await db.query(
+        'INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at) VALUES ($1, $2, $3, $4, $5)',
+        [
+          req.user.id,
+          'FINANCE_ENTRY_EDITED',
+          `${req.user.username} edited ${type}: ${formattedAmount} (${category})`,
+          JSON.stringify({ entry_id: entryId, amount, type, category }),
+          new Date().toISOString()
+        ]
+      );
+
+      const { rows: updatedRows } = await db.query(`
+        SELECT 
+          f.id, f.amount, f.type, f.category, f.note, f.date, f.created_at,
+          u.id as user_id, u.username, u.display_name, u.avatar
+        FROM finance_entries f
+        JOIN users u ON f.user_id = u.id
+        WHERE f.id = $1
+      `, [entryId]);
+
+      res.json({ entry: updatedRows[0] });
+    } catch (err) {
+      console.error('Edit finance entry error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
 // POST /api/finance/budget
 router.post('/budget',
   [

@@ -4,6 +4,9 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 import FinanceForm from '../components/FinanceForm';
 import { useAuth } from '../hooks/useAuth';
 
+const ALL_EXPENSE_CATEGORIES = ['Food', 'Transport', 'Bills', 'Entertainment', 'Investment', 'Savings', 'Other'];
+const ALL_INCOME_CATEGORIES = ['Salary', 'Bonus', 'Gift', 'Investment Return', 'Other Income'];
+
 const CATEGORY_COLORS = {
   Food: '#f97316',
   Transport: '#3b82f6',
@@ -41,6 +44,8 @@ export default function FinancePage() {
   const [showHistoryGoalId, setShowHistoryGoalId] = useState(null);
   const [editingContribId, setEditingContribId] = useState(null);
   const [editContribInput, setEditContribInput] = useState({ amount: '', instrument: '' });
+  const [editingEntryId, setEditingEntryId] = useState(null);
+  const [editEntryInput, setEditEntryInput] = useState({ amount: '', type: 'expense', category: 'Food', note: '', date: '' });
 
   const INSTRUMENTS = ['Stocks', 'Deposit', 'Mutual Funds', 'Bank Account', 'Cash', 'Crypto', 'Other'];
 
@@ -71,6 +76,36 @@ export default function FinancePage() {
     if (!confirm('Delete this entry?')) return;
     try {
       await apiDelete(`/api/finance/${id}`);
+      fetchData();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const startEditEntry = (entry) => {
+    setEditingEntryId(entry.id);
+    setEditEntryInput({
+      amount: entry.amount.toString(),
+      type: entry.type,
+      category: entry.category,
+      note: entry.note || '',
+      date: entry.date.split('T')[0]
+    });
+  };
+
+  const handleEditEntry = async (e) => {
+    e.preventDefault();
+    const amount = parseInt(editEntryInput.amount, 10);
+    if (isNaN(amount) || amount <= 0) return;
+    try {
+      await apiPut(`/api/finance/${editingEntryId}`, {
+        amount,
+        type: editEntryInput.type,
+        category: editEntryInput.category,
+        note: editEntryInput.note,
+        date: editEntryInput.date
+      });
+      setEditingEntryId(null);
       fetchData();
     } catch (err) {
       alert(err.message);
@@ -269,6 +304,30 @@ export default function FinancePage() {
           </svg>
         </button>
       </div>
+
+      {/* Monthly Summary Card */}
+      {data?.summary && (
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="bg-[#1A1A1A] rounded-[2rem] p-4 border border-white/5 text-center">
+            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Income</p>
+            <p className="text-lg font-black text-green-400">{formatRp(data.summary.totalIncome)}</p>
+          </div>
+          <div className="bg-[#1A1A1A] rounded-[2rem] p-4 border border-white/5 text-center">
+            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Expense</p>
+            <p className="text-lg font-black text-red-400">{formatRp(data.summary.totalExpense)}</p>
+          </div>
+          <div className={`rounded-[2rem] p-4 border text-center ${
+            data.summary.netBalance >= 0 
+              ? 'bg-green-500/10 border-green-500/20' 
+              : 'bg-red-500/10 border-red-500/20'
+          }`}>
+            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Net Balance</p>
+            <p className={`text-lg font-black ${data.summary.netBalance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {data.summary.netBalance >= 0 ? '+' : ''}{formatRp(data.summary.netBalance)}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Budget & Settlement Row */}
       <div className="grid md:grid-cols-2 gap-4 mb-4">
@@ -681,6 +740,29 @@ export default function FinancePage() {
                 </thead>
                 <tbody>
                   {sortedEntries().map(entry => (
+                    editingEntryId === entry.id ? (
+                      <tr key={entry.id} className="border-b border-white/5 bg-white/[0.03]">
+                        <td className="p-2" colSpan={7}>
+                          <form onSubmit={handleEditEntry} className="flex flex-wrap gap-2 items-center">
+                            <input type="date" value={editEntryInput.date} onChange={e => setEditEntryInput({...editEntryInput, date: e.target.value})} className="input-field py-1 text-xs w-32" />
+                            <select value={editEntryInput.type} onChange={e => {
+                              const newType = e.target.value;
+                              setEditEntryInput({...editEntryInput, type: newType, category: newType === 'income' ? 'Salary' : 'Food'});
+                            }} className="input-field py-1 text-xs w-24">
+                              <option value="expense">Expense</option>
+                              <option value="income">Income</option>
+                            </select>
+                            <select value={editEntryInput.category} onChange={e => setEditEntryInput({...editEntryInput, category: e.target.value})} className="input-field py-1 text-xs w-32">
+                              {(editEntryInput.type === 'expense' ? ALL_EXPENSE_CATEGORIES : ALL_INCOME_CATEGORIES).map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                            <input type="number" value={editEntryInput.amount} onChange={e => setEditEntryInput({...editEntryInput, amount: e.target.value})} placeholder="Amount" className="input-field py-1 text-xs w-28" min="1" />
+                            <input type="text" value={editEntryInput.note} onChange={e => setEditEntryInput({...editEntryInput, note: e.target.value})} placeholder="Note" className="input-field py-1 text-xs flex-1 min-w-[80px]" maxLength={500} />
+                            <button type="submit" className="text-xs font-bold text-[#FFFC00] hover:text-yellow-300 px-2 py-1">Save</button>
+                            <button type="button" onClick={() => setEditingEntryId(null)} className="text-xs font-bold text-gray-400 hover:text-white px-2 py-1">Cancel</button>
+                          </form>
+                        </td>
+                      </tr>
+                    ) : (
                     <tr key={entry.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
                       <td className="p-4 text-gray-300">
                         {new Date(entry.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -707,18 +789,30 @@ export default function FinancePage() {
                       </td>
                       <td className="p-4">
                         {(entry.user_id === user?.id || user?.is_admin) && (
-                          <button
-                            onClick={() => handleDelete(entry.id)}
-                            className="p-1 rounded hover:bg-red-500/20 text-gray-400 hover:text-red-500 transition-colors"
-                            title="Delete"
-                          >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                            </svg>
-                          </button>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => startEditEntry(entry)}
+                              className="p-1 rounded hover:bg-blue-500/20 text-gray-400 hover:text-blue-400 transition-colors"
+                              title="Edit"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleDelete(entry.id)}
+                              className="p-1 rounded hover:bg-red-500/20 text-gray-400 hover:text-red-500 transition-colors"
+                              title="Delete"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                              </svg>
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
+                    )
                   ))}
                 </tbody>
               </table>
@@ -727,6 +821,33 @@ export default function FinancePage() {
             {/* Mobile List View */}
             <div className="block md:hidden">
               {sortedEntries().map(entry => (
+                editingEntryId === entry.id ? (
+                  <div key={entry.id} className="p-4 border-b border-white/5 bg-white/[0.03]">
+                    <form onSubmit={handleEditEntry} className="space-y-2">
+                      <div className="flex gap-2">
+                        <select value={editEntryInput.type} onChange={e => {
+                          const newType = e.target.value;
+                          setEditEntryInput({...editEntryInput, type: newType, category: newType === 'income' ? 'Salary' : 'Food'});
+                        }} className="input-field py-1 text-xs flex-1">
+                          <option value="expense">Expense</option>
+                          <option value="income">Income</option>
+                        </select>
+                        <select value={editEntryInput.category} onChange={e => setEditEntryInput({...editEntryInput, category: e.target.value})} className="input-field py-1 text-xs flex-1">
+                          {(editEntryInput.type === 'expense' ? ALL_EXPENSE_CATEGORIES : ALL_INCOME_CATEGORIES).map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex gap-2">
+                        <input type="number" value={editEntryInput.amount} onChange={e => setEditEntryInput({...editEntryInput, amount: e.target.value})} placeholder="Amount" className="input-field py-1 text-xs flex-1" min="1" />
+                        <input type="date" value={editEntryInput.date} onChange={e => setEditEntryInput({...editEntryInput, date: e.target.value})} className="input-field py-1 text-xs flex-1" />
+                      </div>
+                      <input type="text" value={editEntryInput.note} onChange={e => setEditEntryInput({...editEntryInput, note: e.target.value})} placeholder="Note" className="input-field py-1 text-xs w-full" maxLength={500} />
+                      <div className="flex gap-2 justify-end">
+                        <button type="button" onClick={() => setEditingEntryId(null)} className="text-xs font-bold text-gray-400 px-3 py-1">Cancel</button>
+                        <button type="submit" className="text-xs font-bold bg-[#FFFC00] text-black px-3 py-1 rounded-lg">Save</button>
+                      </div>
+                    </form>
+                  </div>
+                ) : (
                 <div key={entry.id} className="p-4 border-b border-white/5 hover:bg-white/[0.02] flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: `${CATEGORY_COLORS[entry.category] || '#6b7280'}33` }}>
@@ -743,12 +864,18 @@ export default function FinancePage() {
                       {entry.type === 'income' ? '+' : '-'}{formatRp(entry.amount)}
                     </p>
                     {(entry.user_id === user?.id || user?.is_admin) && (
-                      <button onClick={() => handleDelete(entry.id)} className="text-[10px] text-red-500/80 hover:text-red-400 bg-red-500/10 px-2 py-0.5 rounded-lg">
-                        Delete
-                      </button>
+                      <div className="flex gap-2">
+                        <button onClick={() => startEditEntry(entry)} className="text-[10px] text-blue-400/80 hover:text-blue-300 bg-blue-500/10 px-2 py-0.5 rounded-lg">
+                          Edit
+                        </button>
+                        <button onClick={() => handleDelete(entry.id)} className="text-[10px] text-red-500/80 hover:text-red-400 bg-red-500/10 px-2 py-0.5 rounded-lg">
+                          Delete
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
+                )
               ))}
             </div>
           </div>
