@@ -4,14 +4,23 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 import FinanceForm from '../components/FinanceForm';
 import { useAuth } from '../hooks/useAuth';
 
-const ALL_EXPENSE_CATEGORIES = ['Food', 'Transport', 'Bills', 'Entertainment', 'Investment', 'Savings', 'Other'];
-const ALL_INCOME_CATEGORIES = ['Salary', 'Bonus', 'Gift', 'Investment Return', 'Other Income'];
+const ALL_EXPENSE_CATEGORIES = [
+  'Food', 'Transport', 'Bills', 'Loan Payment', 'Credit Card', 'Insurance', 'Healthcare',
+  'Entertainment', 'Subscription', 'Education', 'Investment', 'Savings', 'Other'
+];
+const ALL_INCOME_CATEGORIES = ['Salary', 'Bonus', 'Freelance', 'Gift', 'Investment Return', 'Other Income'];
 
 const CATEGORY_COLORS = {
   Food: '#f97316',
   Transport: '#3b82f6',
   Bills: '#ef4444',
+  'Loan Payment': '#dc2626',
+  'Credit Card': '#be123c',
+  Insurance: '#0ea5e9',
+  Healthcare: '#fb7185',
   Entertainment: '#a855f7',
+  Subscription: '#8b5cf6',
+  Education: '#fbbf24',
   Investment: '#14b8a6',
   Savings: '#22c55e',
   Other: '#6b7280'

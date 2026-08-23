@@ -10,8 +10,9 @@ const { getDb } = require('../db/connection');
 const { authenticateToken } = require('../middleware/auth');
 
 const VALID_CATEGORIES = [
-  'Food', 'Transport', 'Bills', 'Entertainment', 'Investment', 'Savings', 'Other',
-  'Salary', 'Bonus', 'Gift', 'Investment Return', 'Other Income'
+  'Food', 'Transport', 'Bills', 'Loan Payment', 'Credit Card', 'Insurance', 'Healthcare',
+  'Entertainment', 'Subscription', 'Education', 'Investment', 'Savings', 'Other',
+  'Salary', 'Bonus', 'Gift', 'Freelance', 'Investment Return', 'Other Income'
 ];
 const VALID_SPLIT_TYPES = ['personal', 'shared'];
 
@@ -176,15 +177,15 @@ router.get('/',
       }
 
       // Calculate 50/30/20 Breakdown
-      // Needs: Food, Transport, Bills
-      // Wants: Entertainment, Other
+      // Needs: Food, Transport, Bills, Loan Payment, Credit Card, Insurance, Healthcare
+      // Wants: Entertainment, Subscription, Education, Other
       // Savings: Investment, Savings
       let spentNeeds = 0;
       let spentWants = 0;
       let spentSavings = 0;
       Object.entries(categoryBreakdown).forEach(([cat, amt]) => {
-        if (['Food', 'Transport', 'Bills'].includes(cat)) spentNeeds += amt;
-        else if (['Entertainment', 'Other'].includes(cat)) spentWants += amt;
+        if (['Food', 'Transport', 'Bills', 'Loan Payment', 'Credit Card', 'Insurance', 'Healthcare'].includes(cat)) spentNeeds += amt;
+        else if (['Entertainment', 'Subscription', 'Education', 'Other'].includes(cat)) spentWants += amt;
         else if (['Investment', 'Savings'].includes(cat)) spentSavings += amt;
       });
 

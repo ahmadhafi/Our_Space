@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 
 const EXPENSE_CATEGORY_GROUPS = {
-  'Needs (50% Target)': ['Food', 'Transport', 'Bills'],
-  'Wants (30% Target)': ['Entertainment', 'Other'],
+  'Needs (50% Target)': ['Food', 'Transport', 'Bills', 'Insurance', 'Healthcare'],
+  'Debt (50% Target)': ['Loan Payment', 'Credit Card'],
+  'Wants (30% Target)': ['Entertainment', 'Subscription', 'Education', 'Other'],
   'Savings (20% Target)': ['Investment', 'Savings']
 };
 
-const INCOME_CATEGORIES = ['Salary', 'Bonus', 'Gift', 'Investment Return', 'Other Income'];
+const INCOME_CATEGORIES = ['Salary', 'Bonus', 'Freelance', 'Gift', 'Investment Return', 'Other Income'];
 
 export default function FinanceForm({ onEntryCreated }) {
   const [amount, setAmount] = useState('');
