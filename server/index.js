@@ -63,6 +63,7 @@ app.use('/api/profile', require('./routes/profile'));
 app.use('/api/activity', require('./routes/activity'));
 app.use('/api/stories', require('./routes/stories'));
 app.use('/api/chat', require('./routes/chat'));
+app.use('/api/push', require('./routes/push'));
 
 // ── Health Check ──
 app.get('/api/health', (req, res) => {

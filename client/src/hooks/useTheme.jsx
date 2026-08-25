@@ -7,7 +7,8 @@ const PRESETS = {
   sakura: { accent: '#f9a8d4', bg: '#fff0f5', label: 'Sakura Pink', dark: false },
   lavender: { accent: '#c084fc', bg: '#f5f0ff', label: 'Lavender Dream', dark: false },
   mint: { accent: '#34d399', bg: '#f0fdf8', label: 'Mint Fresh', dark: false },
-  twilight: { accent: '#818cf8', bg: '#1e1b4b', label: 'Twilight', dark: true }
+  twilight: { accent: '#818cf8', bg: '#1e1b4b', label: 'Twilight', dark: true },
+  cute: { accent: '#ff9a9e', bg: '#fecfef', label: 'Super Cute', dark: false }
 };
 
 function hexToLight(hex) {
@@ -51,21 +52,22 @@ function applyThemeVars(accent, bg) {
 
 export function ThemeProvider({ children }) {
   const [theme, setThemeState] = useState({
-    preset: 'sakura',
-    accent: '#f9a8d4',
-    bg: '#fff0f5'
+    preset: 'cute',
+    accent: '#ff9a9e',
+    bg: '#fecfef'
   });
 
   const applyTheme = useCallback((preset, accent, bg) => {
     setThemeState({ preset, accent, bg });
     applyThemeVars(accent, bg);
+    document.documentElement.setAttribute('data-theme', preset);
   }, []);
 
   const initTheme = useCallback((user) => {
     if (!user) return;
-    const preset = user.theme_preset || 'sakura';
-    const accent = user.accent_color || '#f9a8d4';
-    const bg = user.bg_color || '#fff0f5';
+    const preset = user.theme_preset || 'cute';
+    const accent = user.accent_color || '#ff9a9e';
+    const bg = user.bg_color || '#fecfef';
     applyTheme(preset, accent, bg);
   }, [applyTheme]);
 

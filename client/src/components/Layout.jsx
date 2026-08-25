@@ -18,8 +18,52 @@ export default function Layout() {
   const location = useLocation();
 
   useEffect(() => {
-    if (user) initTheme(user);
+    if (user) {
+      initTheme(user);
+
+      // Push Notification Subscription
+      if ('Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window) {
+        Notification.requestPermission().then(async (permission) => {
+          if (permission === 'granted') {
+            try {
+              const registration = await navigator.serviceWorker.ready;
+              // Check if already subscribed
+              let subscription = await registration.pushManager.getSubscription();
+              if (!subscription) {
+                // You must supply the same public key used on the server
+                const VAPID_PUBLIC_KEY = 'BCDPTWVpW6AO5vV9RY0FFukISlvGll4MGDaGvE-LIwjEPc5J2Y_YNtdntMwr2itLp11c59wTTBUWaRUH-kqXuXM';
+                const convertedVapidKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+                subscription = await registration.pushManager.subscribe({
+                  userVisibleOnly: true,
+                  applicationServerKey: convertedVapidKey
+                });
+              }
+              // Send subscription to server
+              import('../hooks/useApi').then(({ apiPost }) => {
+                apiPost('/api/push/subscribe', subscription).catch(console.error);
+              });
+            } catch (err) {
+              console.error('Push subscription failed:', err);
+            }
+          }
+        });
+      }
+    }
   }, [user, initTheme]);
+
+  // Helper to convert VAPID key
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  }
 
   const handleLogout = async () => {
     await logout();

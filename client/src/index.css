@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
+
 :root {
   --color-accent: #FFFC00;
   --color-accent-light: #fffc0033;
@@ -137,4 +139,105 @@ main, .scroll-smooth-area {
 .custom-scroll {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* ============================================================
+   CUTE THEME & TASTE-SKILL OVERRIDES
+============================================================ */
+html[data-theme="cute"] body {
+  font-family: 'Quicksand', system-ui, -apple-system, sans-serif;
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><text x="0" y="20" font-size="20">✨</text></svg>'), auto;
+}
+
+html[data-theme="cute"] a, 
+html[data-theme="cute"] button,
+html[data-theme="cute"] [role="button"],
+html[data-theme="cute"] input,
+html[data-theme="cute"] select {
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><text x="0" y="20" font-size="20">💖</text></svg>'), pointer;
+}
+
+/* Soft Structuralism & Double-Bezel */
+html[data-theme="cute"] .glass-card,
+html[data-theme="cute"] .glass-card-solid {
+  @apply rounded-[2.5rem];
+  background: var(--color-bg-dark);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), 0 8px 30px rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(16px);
+  color: #4a4a4a;
+}
+
+/* Fix text colors for cute theme */
+html[data-theme="cute"] body {
+  color: #4a4a4a;
+}
+
+html[data-theme="cute"] p.text-gray-500,
+html[data-theme="cute"] p.text-gray-400,
+html[data-theme="cute"] span.text-gray-500,
+html[data-theme="cute"] span.text-gray-400 {
+  color: #888888 !important;
+}
+
+html[data-theme="cute"] h1, html[data-theme="cute"] h2, html[data-theme="cute"] h3, html[data-theme="cute"] h4, html[data-theme="cute"] .text-white {
+  color: #2d3748 !important;
+}
+
+html[data-theme="cute"] .btn-primary {
+  @apply px-6 py-3.5 rounded-full font-bold transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)];
+  background: var(--color-accent);
+  color: #fff;
+  box-shadow: 0 4px 15px var(--color-accent-light);
+  border: 2px solid #fff;
+}
+
+html[data-theme="cute"] .btn-primary:hover {
+  transform: scale(1.05) translateY(-2px);
+  filter: brightness(1.05);
+}
+
+html[data-theme="cute"] .btn-primary:active {
+  transform: scale(0.95);
+}
+
+html[data-theme="cute"] .btn-secondary {
+  @apply px-5 py-3.5 rounded-full font-bold transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)];
+  background: #ffffff;
+  color: var(--color-accent);
+  border: 2px solid var(--color-accent-light);
+}
+
+html[data-theme="cute"] .btn-secondary:hover {
+  background: var(--color-accent-light);
+  transform: translateY(-2px);
+}
+
+html[data-theme="cute"] .input-field {
+  @apply w-full px-5 py-3.5 rounded-[1.5rem] transition-all duration-300 outline-none;
+  background: #ffffff;
+  color: #4a4a4a;
+  border: 2px solid #ffecf0;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
+}
+
+html[data-theme="cute"] .input-field:focus {
+  border-color: var(--color-accent);
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.02), 0 0 0 3px var(--color-accent-light);
+}
+
+html[data-theme="cute"] .badge {
+  background: var(--color-accent);
+  color: #ffffff;
+  border: 1px solid #ffffff;
+}
+
+/* Background gradient for cute theme */
+html[data-theme="cute"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(circle at 50% 0%, #ffffff, var(--color-bg) 70%);
+  pointer-events: none;
 }

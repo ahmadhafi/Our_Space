@@ -115,6 +115,15 @@ async function initializeSchema(sql) {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        subscription TEXT NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE(user_id, subscription)
+      );
+
       CREATE TABLE IF NOT EXISTS refresh_tokens (
         id SERIAL PRIMARY KEY,
         user_id INTEGER NOT NULL,

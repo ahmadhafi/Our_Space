@@ -76,10 +76,10 @@ router.get('/',
       // Get budget for the month (group by category)
       let budgetRows = [];
       if (view === 'personal') {
-        const result = await db.query('SELECT category, amount FROM finance_budgets WHERE month = $1 AND type = $2 AND user_id = $3', [month, view, req.user.id]);
+        const result = await db.query('SELECT id, category, amount FROM finance_budgets WHERE month = $1 AND type = $2 AND user_id = $3', [month, view, req.user.id]);
         budgetRows = result.rows;
       } else {
-        const result = await db.query('SELECT category, amount FROM finance_budgets WHERE month = $1 AND type = $2', [month, view]);
+        const result = await db.query('SELECT id, category, amount FROM finance_budgets WHERE month = $1 AND type = $2', [month, view]);
         budgetRows = result.rows;
       }
       
@@ -199,6 +199,7 @@ router.get('/',
         month,
         budget: totalBudget, // For backwards compatibility
         budgets,
+        budgetList: budgetRows,
         settlement,
         entries,
         summary: {
@@ -415,6 +416,24 @@ router.post('/budget',
   }
 );
 
+// DELETE /api/finance/budget/:id
+router.delete('/budget/:id',
+  [param('id').isInt().toInt()],
+  async (req, res) => {
+    try {
+      const db = getDb();
+      const budgetId = req.params.id;
+      const { rows } = await db.query('DELETE FROM finance_budgets WHERE id = $1 RETURNING id', [budgetId]);
+      if (!rows.length) return res.status(404).json({ error: 'Budget not found' });
+      res.json({ message: 'Budget deleted' });
+    } catch (err) {
+      console.error('Delete budget error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+
 // GET /api/finance/goals
 router.get('/goals', 
   [query('view').optional().isIn(['personal', 'shared']).withMessage('View must be personal or shared')],
@@ -511,6 +530,67 @@ router.post('/goals',
     }
   }
 );
+
+// PUT /api/finance/goals/:id
+router.put('/goals/:id',
+  [
+    param('id').isInt().toInt(),
+    body('title').optional().trim().isLength({ min: 1, max: 100 }).withMessage('Title is required'),
+    body('target_amount').optional().isInt({ min: 1 }).withMessage('Target amount must be a positive integer'),
+    body('deadline').optional().isISO8601().withMessage('Deadline must be a valid date'),
+    body('type').optional().isIn(['personal', 'shared']).withMessage('Type must be personal or shared')
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: errors.array()[0].msg });
+    }
+
+    try {
+      const db = getDb();
+      const goalId = req.params.id;
+      const { title, target_amount, deadline, type } = req.body;
+      
+      const { rows } = await db.query('SELECT * FROM finance_goals WHERE id = $1', [goalId]);
+      if (!rows.length) return res.status(404).json({ error: 'Goal not found' });
+      
+      let query = 'UPDATE finance_goals SET updated_at = NOW()';
+      const params = [];
+      let paramIndex = 1;
+
+      if (title !== undefined) {
+        query += `, title = $${paramIndex}`;
+        params.push(title);
+        paramIndex++;
+      }
+      if (target_amount !== undefined) {
+        query += `, target_amount = $${paramIndex}`;
+        params.push(target_amount);
+        paramIndex++;
+      }
+      if (deadline !== undefined) {
+        query += `, deadline = $${paramIndex}`;
+        params.push(deadline);
+        paramIndex++;
+      }
+      if (type !== undefined) {
+        query += `, type = $${paramIndex}`;
+        params.push(type);
+        paramIndex++;
+      }
+      
+      query += ` WHERE id = $${paramIndex} RETURNING *`;
+      params.push(goalId);
+
+      const { rows: updated } = await db.query(query, params);
+      res.json(updated[0]);
+    } catch (err) {
+      console.error('Edit goal error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
 
 // PUT /api/finance/goals/:id/contribute
 router.put('/goals/:id/contribute',
@@ -636,136 +716,6 @@ router.delete('/goals/:id',
       res.json({ message: 'Goal deleted' });
     } catch (err) {
       console.error('Delete goal error:', err);
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  }
-);
-
-// ==========================================
-// NET WORTH & ACCOUNTS
-// ==========================================
-
-// GET /api/finance/net-worth
-router.get('/net-worth', async (req, res) => {
-  try {
-    const db = getDb();
-    // Assuming 'shared' for now, or personal. Let's just grab all accounts for the users if shared, or just personal
-    // Actually, accounts should probably just be all accounts since net worth is typically combined for couples using a shared app
-    const { rows } = await db.query(
-      'SELECT * FROM finance_accounts ORDER BY type ASC, name ASC'
-    );
-    
-    let totalAssets = 0;
-    let totalLiabilities = 0;
-    const assets = [];
-    const liabilities = [];
-
-    rows.forEach(acc => {
-      if (acc.type === 'asset') {
-        totalAssets += acc.balance;
-        assets.push(acc);
-      } else {
-        totalLiabilities += acc.balance;
-        liabilities.push(acc);
-      }
-    });
-
-    res.json({
-      netWorth: totalAssets - totalLiabilities,
-      totalAssets,
-      totalLiabilities,
-      assets,
-      liabilities
-    });
-  } catch (err) {
-    console.error('Fetch net worth error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// POST /api/finance/accounts
-router.post('/accounts',
-  [
-    body('name').notEmpty().trim(),
-    body('type').isIn(['asset', 'liability']),
-    body('balance').isInt()
-  ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ error: errors.array()[0].msg });
-
-    try {
-      const db = getDb();
-      const { name, type, balance } = req.body;
-      const { rows } = await db.query(
-        'INSERT INTO finance_accounts (user_id, name, type, balance) VALUES ($1, $2, $3, $4) RETURNING *',
-        [req.user.id, name, type, balance]
-      );
-      res.status(201).json(rows[0]);
-    } catch (err) {
-      console.error('Create account error:', err);
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  }
-);
-
-// PUT /api/finance/accounts/:id
-router.put('/accounts/:id',
-  [
-    param('id').isInt().toInt(),
-    body('name').optional().notEmpty().trim(),
-    body('balance').optional().isInt()
-  ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ error: errors.array()[0].msg });
-
-    try {
-      const db = getDb();
-      const accountId = req.params.id;
-      const { name, balance } = req.body;
-
-      const { rows } = await db.query('SELECT * FROM finance_accounts WHERE id = $1', [accountId]);
-      if (!rows.length) return res.status(404).json({ error: 'Account not found' });
-
-      let query = 'UPDATE finance_accounts SET updated_at = NOW()';
-      const params = [];
-      let paramIndex = 1;
-
-      if (name !== undefined) {
-        query += `, name = $${paramIndex}`;
-        params.push(name);
-        paramIndex++;
-      }
-      if (balance !== undefined) {
-        query += `, balance = $${paramIndex}`;
-        params.push(balance);
-        paramIndex++;
-      }
-
-      query += ` WHERE id = $${paramIndex} RETURNING *`;
-      params.push(accountId);
-
-      const { rows: updated } = await db.query(query, params);
-      res.json(updated[0]);
-    } catch (err) {
-      console.error('Update account error:', err);
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  }
-);
-
-// DELETE /api/finance/accounts/:id
-router.delete('/accounts/:id',
-  [param('id').isInt().toInt()],
-  async (req, res) => {
-    try {
-      const db = getDb();
-      const { rows } = await db.query('DELETE FROM finance_accounts WHERE id = $1 RETURNING id', [req.params.id]);
-      if (!rows.length) return res.status(404).json({ error: 'Account not found' });
-      res.json({ message: 'Account deleted' });
-    } catch (err) {
-      console.error('Delete account error:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
