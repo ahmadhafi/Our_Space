@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { Outlet, NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
-import { usePushNotifications } from '../hooks/usePushNotifications';
 import IosInstallPrompt from './IosInstallPrompt';
 
 const getMediaUrl = (path) => {
@@ -14,20 +13,34 @@ const getMediaUrl = (path) => {
 export default function Layout() {
   const { user, logout } = useAuth();
   const { initTheme } = useTheme();
-  const { subscribeUser } = usePushNotifications();
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Initialize theme only when user or theme preferences change
   useEffect(() => {
     if (user) {
       initTheme(user);
+    }
+  }, [user?.id, user?.theme_preset, user?.accent_color, user?.bg_color]);
 
-      // Auto-sync push subscription if already granted
-      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-        subscribeUser().catch(() => {});
+  // Push subscription sync (runs once per user login, completely isolated)
+  useEffect(() => {
+    if (user && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        navigator.serviceWorker.ready.then(async (reg) => {
+          try {
+            const sub = await reg.pushManager.getSubscription();
+            if (sub) {
+              const { apiPost } = await import('../hooks/useApi');
+              apiPost('/api/push/subscribe', sub).catch(() => {});
+            }
+          } catch (e) {
+            console.warn('Push sync note:', e);
+          }
+        });
       }
     }
-  }, [user, initTheme, subscribeUser]);
+  }, [user?.id]);
 
   const handleLogout = async () => {
     await logout();
@@ -49,7 +62,7 @@ export default function Layout() {
         {/* Mobile Top App Bar */}
         {!location.pathname.startsWith('/chat/') && (
         <header 
-          className="md:hidden fixed top-0 w-full z-50 px-4 pb-4 flex items-center justify-between bg-gradient-to-b from-black/80 to-transparent pointer-events-none"
+          className="md:hidden fixed top-0 w-full z-40 px-4 pb-4 flex items-center justify-between bg-gradient-to-b from-black/80 to-transparent pointer-events-none"
           style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
         >
           <div className="flex items-center gap-3 pointer-events-auto">
@@ -135,7 +148,7 @@ export default function Layout() {
 
         {/* Mobile Bottom Navigation */}
         {!location.pathname.startsWith('/chat/') && (
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 px-8 py-4 bg-black/90 backdrop-blur-xl border-t border-white/10 flex justify-between items-center" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 px-8 py-4 bg-black/90 backdrop-blur-xl border-t border-white/10 flex justify-between items-center pointer-events-auto" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
           {navItems.map(({ path, label, icon: Icon }) => (
             <NavLink
               key={path}
@@ -153,7 +166,7 @@ export default function Layout() {
         </nav>
         )}
 
-        {/* iOS PWA Installation Guidance */}
+        {/* iOS PWA Installation Modal (On-demand only) */}
         <IosInstallPrompt />
 
       </div>

@@ -56,7 +56,9 @@ router.get('/',
             u.id as user_id, u.username, u.display_name, u.avatar
           FROM finance_entries f
           JOIN users u ON f.user_id = u.id
-          WHERE (f.date LIKE $1 || '%' OR (f.date >= $2 AND f.date < $3)) AND f.split_type = 'personal' AND f.user_id = $4
+          WHERE (f.date LIKE $1 || '%' OR (f.date >= $2 AND f.date < $3)) 
+            AND (f.split_type = 'personal' OR f.split_type IS NULL) 
+            AND f.user_id = $4
           ORDER BY f.date DESC, f.created_at DESC
         `;
         entriesParams.push(req.user.id);
@@ -67,10 +69,9 @@ router.get('/',
             u.id as user_id, u.username, u.display_name, u.avatar
           FROM finance_entries f
           JOIN users u ON f.user_id = u.id
-          WHERE (f.date LIKE $1 || '%' OR (f.date >= $2 AND f.date < $3)) AND (f.split_type = 'shared' OR f.user_id = $4)
+          WHERE (f.date LIKE $1 || '%' OR (f.date >= $2 AND f.date < $3))
           ORDER BY f.date DESC, f.created_at DESC
         `;
-        entriesParams.push(req.user.id);
       } else {
         entriesQuery = `
           SELECT 
@@ -88,10 +89,13 @@ router.get('/',
       // Get budget for the month (group by category)
       let budgetRows = [];
       if (view === 'personal') {
-        const result = await db.query('SELECT id, category, amount FROM finance_budgets WHERE month = $1 AND type = $2 AND user_id = $3', [month, view, req.user.id]);
+        const result = await db.query('SELECT id, category, amount, type, user_id FROM finance_budgets WHERE month = $1 AND (type = $2 AND user_id = $3)', [month, view, req.user.id]);
+        budgetRows = result.rows;
+      } else if (view === 'all') {
+        const result = await db.query('SELECT id, category, amount, type, user_id FROM finance_budgets WHERE month = $1', [month]);
         budgetRows = result.rows;
       } else {
-        const result = await db.query('SELECT id, category, amount FROM finance_budgets WHERE month = $1 AND type = $2', [month, view]);
+        const result = await db.query('SELECT id, category, amount, type, user_id FROM finance_budgets WHERE month = $1 AND type = $2', [month, view]);
         budgetRows = result.rows;
       }
       
