@@ -107,10 +107,10 @@ router.post('/:userId', requireAuth, upload.single('media'), async (req, res, ne
           webpush.setVapidDetails('mailto:test@example.com', process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
           
           const payload = JSON.stringify({
-            title: \`New message from \${req.user.display_name || req.user.username}\`,
+            title: `New message from ${req.user.display_name || req.user.username}`,
             body: text || 'Sent an attachment',
-            icon: req.user.avatar ? \`/uploads/\${req.user.avatar}\` : '/app-icon.jpg',
-            url: \`/chat/\${myId}\`
+            icon: req.user.avatar ? `/uploads/${req.user.avatar}` : '/app-icon.jpg',
+            url: `/chat/${myId}`
           });
 
           for (const sub of subscriptions.rows) {
