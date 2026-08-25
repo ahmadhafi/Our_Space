@@ -1,14 +1,15 @@
 import { useState, useRef } from 'react';
 import { scanReceiptImage } from '../utils/receiptOcr';
-import { getCategoryIcon } from './CategoryPickerModal';
+import { apiPost } from '../hooks/useApi';
 
-export default function ReceiptScannerModal({ isOpen, onClose, onApply }) {
+export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved }) {
   const [imageSrc, setImageSrc] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [progressInfo, setProgressInfo] = useState({ status: '', progress: 0 });
   const [scanResult, setScanResult] = useState(null);
   const [error, setError] = useState('');
-  const [showRawText, setShowRawText] = useState(false);
+  const [successMsg, setSuccessMsg] = useState('');
 
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
@@ -18,15 +19,14 @@ export default function ReceiptScannerModal({ isOpen, onClose, onApply }) {
   const handleImageSelected = async (file) => {
     if (!file) return;
     setError('');
+    setSuccessMsg('');
     setScanResult(null);
 
-    // Read image for preview
     const reader = new FileReader();
     reader.onload = async (e) => {
       const dataUrl = e.target.result;
       setImageSrc(dataUrl);
 
-      // Start OCR
       setIsScanning(true);
       try {
         const result = await scanReceiptImage(dataUrl, (progress) => {
@@ -38,12 +38,11 @@ export default function ReceiptScannerModal({ isOpen, onClose, onApply }) {
           date: result.date || new Date().toISOString().split('T')[0],
           category: result.category || 'Food',
           note: result.note || '',
-          splitType: 'personal',
-          rawText: result.rawText
+          splitType: 'personal'
         });
       } catch (err) {
         console.error('Scan error:', err);
-        setError(err.message || 'Failed to scan receipt. Please try another photo.');
+        setError(err.message || 'Failed to read receipt. Please try another photo.');
       } finally {
         setIsScanning(false);
       }
@@ -51,92 +50,103 @@ export default function ReceiptScannerModal({ isOpen, onClose, onApply }) {
     reader.readAsDataURL(file);
   };
 
-  const handleApply = () => {
-    if (!scanResult) return;
-    onApply({
-      amount: scanResult.amount ? parseInt(scanResult.amount, 10) : '',
-      date: scanResult.date,
-      category: scanResult.category,
-      note: scanResult.note,
-      splitType: scanResult.splitType || 'personal'
-    });
-    onClose();
+  // Automatically save transaction into the database
+  const handleAutoSave = async () => {
+    if (!scanResult || !scanResult.amount || isSaving) return;
+
+    const amountInt = parseInt(scanResult.amount, 10);
+    if (isNaN(amountInt) || amountInt <= 0) {
+      setError('Please enter a valid amount');
+      return;
+    }
+
+    setIsSaving(true);
+    setError('');
+
+    try {
+      const response = await apiPost('/api/finance', {
+        amount: amountInt,
+        type: 'expense',
+        category: scanResult.category || 'Food',
+        note: (scanResult.note || 'Receipt Scan').trim(),
+        date: scanResult.date || new Date().toISOString().split('T')[0],
+        split_type: scanResult.splitType || 'personal'
+      });
+
+      setSuccessMsg('Transaction saved automatically!');
+      setTimeout(() => {
+        if (onEntrySaved) onEntrySaved(response.entry);
+        onClose();
+      }, 700);
+    } catch (err) {
+      console.error('Save transaction error:', err);
+      setError(err.message || 'Failed to save transaction');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const resetScanner = () => {
     setImageSrc(null);
     setScanResult(null);
     setError('');
+    setSuccessMsg('');
     setIsScanning(false);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in">
-      <div className="w-full max-w-lg bg-[#141414] text-white rounded-[2.5rem] border border-white/10 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-slide-up">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fade-in text-white">
+      <div className="w-full max-w-md bg-[#121212] rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
         
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between bg-black/40">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-green-500/20 border border-green-500/30 flex items-center justify-center text-green-400 text-lg">
-              🧾
-            </div>
-            <div>
-              <h3 className="font-bold text-base text-white">Smart Receipt Scanner</h3>
-              <p className="text-[11px] text-gray-400">Scan & auto-fill transaction details</p>
-            </div>
+        <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-base text-white">Receipt Scanner</h3>
+            <p className="text-xs text-gray-400">Scan receipt to auto-record expense</p>
           </div>
           <button 
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white"
+            className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
           >
             ✕
           </button>
         </div>
 
         {/* Content Body */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
           
-          {/* Upload / Capture Trigger (when no image selected) */}
+          {/* Upload / Capture Trigger */}
           {!imageSrc && (
-            <div className="space-y-4 py-4">
-              <div className="border-2 border-dashed border-white/15 rounded-3xl p-6 text-center bg-white/5 flex flex-col items-center justify-center gap-3">
-                <div className="w-16 h-16 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center text-3xl">
-                  📸
+            <div className="space-y-4 py-2">
+              <div className="border border-dashed border-white/15 rounded-2xl p-6 text-center bg-white/[0.02] flex flex-col items-center justify-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-gray-300">
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                  </svg>
                 </div>
                 <div>
-                  <h4 className="font-bold text-white text-sm">Upload or Snap a Receipt</h4>
-                  <p className="text-xs text-gray-400 mt-1 max-w-xs">
-                    Our on-device AI will recognize the Total Amount, Date, Merchant, and Category automatically!
+                  <h4 className="font-medium text-white text-sm">Upload or capture receipt</h4>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Amount, date, and category will be read automatically.
                   </p>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-2.5 w-full mt-2">
+                <div className="flex gap-2.5 w-full mt-2">
                   <button
                     type="button"
                     onClick={() => cameraInputRef.current?.click()}
-                    className="flex-1 py-3 px-4 rounded-2xl bg-green-500 hover:bg-green-600 text-black font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-green-500/20"
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-white text-black font-semibold text-xs transition-all hover:bg-gray-200"
                   >
-                    <span>📷</span>
-                    Take Photo
+                    Camera
                   </button>
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex-1 py-3 px-4 rounded-2xl bg-white/10 hover:bg-white/15 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all"
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs transition-all"
                   >
-                    <span>🖼️</span>
-                    Choose Gallery
+                    Gallery
                   </button>
                 </div>
-              </div>
-
-              {/* Tips */}
-              <div className="bg-white/5 rounded-2xl p-3 border border-white/5 text-[11px] text-gray-400 space-y-1">
-                <div className="font-semibold text-green-400 flex items-center gap-1">
-                  💡 Helpful Scanning Tips:
-                </div>
-                <p>• Make sure the Total / Grand Total and Date are well-lit and clear.</p>
-                <p>• Supports Indonesian & International receipts (Indomaret, Alfamart, Cafes, SPBU, etc.).</p>
               </div>
 
               {/* Hidden Inputs */}
@@ -161,57 +171,60 @@ export default function ReceiptScannerModal({ isOpen, onClose, onApply }) {
           {/* Active Image Preview & Scanning State */}
           {imageSrc && (
             <div className="space-y-4">
-              <div className="relative rounded-2xl overflow-hidden max-h-56 bg-black border border-white/10 flex items-center justify-center">
-                <img src={imageSrc} alt="Receipt preview" className="w-full h-full object-contain max-h-56 opacity-85" />
+              <div className="relative rounded-2xl overflow-hidden max-h-48 bg-black border border-white/10 flex items-center justify-center">
+                <img src={imageSrc} alt="Receipt preview" className="w-full h-full object-contain max-h-48 opacity-80" />
                 
                 {isScanning && (
-                  <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center p-4">
-                    <div className="w-12 h-12 rounded-full border-4 border-green-500 border-t-transparent animate-spin mb-3" />
-                    <p className="text-sm font-bold text-white">{progressInfo.status || 'Scanning receipt...'}</p>
-                    <div className="w-48 bg-white/20 h-2 rounded-full mt-3 overflow-hidden">
+                  <div className="absolute inset-0 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center p-4">
+                    <div className="w-8 h-8 rounded-full border-2 border-white border-t-transparent animate-spin mb-2" />
+                    <p className="text-xs font-medium text-white">{progressInfo.status || 'Scanning receipt...'}</p>
+                    <div className="w-36 bg-white/20 h-1.5 rounded-full mt-2.5 overflow-hidden">
                       <div 
-                        className="bg-green-500 h-full transition-all duration-300 rounded-full"
+                        className="bg-white h-full transition-all duration-300 rounded-full"
                         style={{ width: `${progressInfo.progress}%` }}
                       />
                     </div>
-                    <p className="text-[10px] text-green-400 mt-1 font-mono">{progressInfo.progress}%</p>
                   </div>
                 )}
               </div>
 
               {error && (
-                <div className="p-3 bg-red-500/20 border border-red-500/40 rounded-2xl text-xs text-red-300">
+                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-400">
                   {error}
                 </div>
               )}
 
-              {/* Scanned Results Preview / Editable Fields */}
-              {scanResult && !isScanning && (
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-3">
-                  <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                    <span className="text-xs font-bold text-green-400 flex items-center gap-1">
-                      ✅ Extracted Details
-                    </span>
+              {successMsg && (
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-400 font-medium text-center">
+                  {successMsg}
+                </div>
+              )}
+
+              {/* Extracted Details & Auto-Save Confirmation */}
+              {scanResult && !isScanning && !successMsg && (
+                <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                    <span className="text-xs font-semibold text-gray-300">Extracted Information</span>
                     <button
                       type="button"
                       onClick={resetScanner}
-                      className="text-xs text-gray-400 hover:text-white underline"
+                      className="text-xs text-gray-400 hover:text-white"
                     >
-                      Scan Another
+                      Scan another
                     </button>
                   </div>
 
                   {/* Amount Field */}
                   <div>
-                    <label className="text-[11px] font-semibold text-gray-400 block mb-1">Total Amount (IDR)</label>
+                    <label className="text-[11px] font-medium text-gray-400 block mb-1">Total Amount (IDR)</label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-green-400 font-bold">Rp</span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">Rp</span>
                       <input
                         type="number"
                         value={scanResult.amount}
                         onChange={(e) => setScanResult({ ...scanResult, amount: e.target.value })}
                         placeholder="0"
-                        className="w-full bg-black/60 border border-white/15 rounded-xl pl-10 pr-3 py-2 text-white font-bold text-lg focus:outline-none focus:border-green-500"
+                        className="w-full bg-black/40 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-white font-semibold text-base focus:outline-none focus:border-white/30"
                       />
                     </div>
                   </div>
@@ -219,58 +232,37 @@ export default function ReceiptScannerModal({ isOpen, onClose, onApply }) {
                   {/* Date & Category Grid */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-[11px] font-semibold text-gray-400 block mb-1">Transaction Date</label>
+                      <label className="text-[11px] font-medium text-gray-400 block mb-1">Date</label>
                       <input
                         type="date"
                         value={scanResult.date}
                         onChange={(e) => setScanResult({ ...scanResult, date: e.target.value })}
-                        className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-green-500"
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
                       />
                     </div>
 
                     <div>
-                      <label className="text-[11px] font-semibold text-gray-400 block mb-1">Category</label>
-                      <div className="flex items-center gap-1.5 bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-xs text-white">
-                        <span>{getCategoryIcon(scanResult.category)}</span>
-                        <input
-                          type="text"
-                          value={scanResult.category}
-                          onChange={(e) => setScanResult({ ...scanResult, category: e.target.value })}
-                          className="bg-transparent w-full text-xs text-white focus:outline-none"
-                        />
-                      </div>
+                      <label className="text-[11px] font-medium text-gray-400 block mb-1">Category</label>
+                      <input
+                        type="text"
+                        value={scanResult.category}
+                        onChange={(e) => setScanResult({ ...scanResult, category: e.target.value })}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                      />
                     </div>
                   </div>
 
                   {/* Note / Merchant */}
                   <div>
-                    <label className="text-[11px] font-semibold text-gray-400 block mb-1">Note / Store Name</label>
+                    <label className="text-[11px] font-medium text-gray-400 block mb-1">Note / Store Name</label>
                     <input
                       type="text"
                       value={scanResult.note}
                       onChange={(e) => setScanResult({ ...scanResult, note: e.target.value })}
-                      placeholder="e.g. Indomaret Sudirman"
-                      className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-green-500"
+                      placeholder="e.g. Superindo, Cafe, etc."
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
                     />
                   </div>
-
-                  {/* Raw OCR Text Debug Accordion */}
-                  {scanResult.rawText && (
-                    <div className="pt-1">
-                      <button
-                        type="button"
-                        onClick={() => setShowRawText(!showRawText)}
-                        className="text-[10px] text-gray-500 hover:text-gray-300 underline"
-                      >
-                        {showRawText ? 'Hide detected OCR text' : 'View detected raw receipt text'}
-                      </button>
-                      {showRawText && (
-                        <pre className="mt-2 p-2 bg-black/80 rounded-xl text-[10px] text-gray-400 font-mono overflow-x-auto max-h-32 border border-white/5 whitespace-pre-wrap">
-                          {scanResult.rawText}
-                        </pre>
-                      )}
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -280,23 +272,23 @@ export default function ReceiptScannerModal({ isOpen, onClose, onApply }) {
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 border-t border-white/10 bg-black/40 flex items-center justify-end gap-2.5">
+        <div className="p-4 border-t border-white/10 bg-black/30 flex items-center justify-end gap-2.5">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 text-gray-300 text-sm font-semibold transition-colors"
+            className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-medium transition-colors"
           >
             Cancel
           </button>
           
-          {scanResult && !isScanning && (
+          {scanResult && !isScanning && !successMsg && (
             <button
               type="button"
-              onClick={handleApply}
-              className="px-6 py-2.5 rounded-2xl bg-green-500 hover:bg-green-600 text-black font-bold text-sm flex items-center gap-2 shadow-lg shadow-green-500/20 transition-all"
+              onClick={handleAutoSave}
+              disabled={isSaving || !scanResult.amount}
+              className="px-5 py-2 rounded-xl bg-white text-black font-semibold text-xs flex items-center gap-1.5 transition-all hover:bg-gray-200 disabled:opacity-50"
             >
-              <span>✨</span>
-              Apply to Transaction
+              {isSaving ? 'Saving...' : 'Auto-Save Transaction'}
             </button>
           )}
         </div>

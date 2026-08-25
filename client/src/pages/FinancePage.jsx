@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiPost, apiPut, apiDelete } from '../hooks/useApi';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import FinanceForm from '../components/FinanceForm';
-import CategoryPickerModal, { getCategoryIcon, getCategoryColor } from '../components/CategoryPickerModal';
+import { getCategoryColor } from '../components/CategoryPickerModal';
 import ReceiptScannerModal from '../components/ReceiptScannerModal';
 import { useAuth } from '../hooks/useAuth';
 
@@ -16,10 +16,7 @@ export default function FinancePage() {
   const [view, setView] = useState('personal'); // 'personal' | 'shared'
   const [activeTab, setActiveTab] = useState('transactions'); // 'transactions' | 'planning' | 'reports'
   
-  // Privacy Eye state
   const [hideBalance, setHideBalance] = useState(false);
-  
-  // Modals & Forms
   const [showForm, setShowForm] = useState(false);
   const [showScannerModal, setShowScannerModal] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState(null);
@@ -38,9 +35,6 @@ export default function FinancePage() {
   const [goalInput, setGoalInput] = useState({ title: '', target_amount: '' });
   const [contributeGoalId, setContributeGoalId] = useState(null);
   const [contributeInput, setContributeInput] = useState({ amount: '', instrument: 'Cash' });
-  const [showHistoryGoalId, setShowHistoryGoalId] = useState(null);
-  const [editingContribId, setEditingContribId] = useState(null);
-  const [editContribInput, setEditContribInput] = useState({ amount: '', instrument: '' });
 
   const [month, setMonth] = useState(() => {
     const now = new Date();
@@ -50,10 +44,7 @@ export default function FinancePage() {
   const [sortField, setSortField] = useState('date');
   const [sortDir, setSortDir] = useState('desc');
   const [trendData, setTrendData] = useState(null);
-  const [isZbbMode, setIsZbbMode] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
-
-  const INSTRUMENTS = ['Stocks', 'Deposit', 'Mutual Funds', 'Bank Account', 'Cash', 'Crypto', 'Other'];
 
   const fetchData = useCallback(async () => {
     try {
@@ -120,12 +111,13 @@ export default function FinancePage() {
     }
   };
 
-  const handleEditBudget = async (e, id) => {
+  const handleSetBudget = async (e) => {
     e.preventDefault();
-    if (!editBudgetInput.amount) return;
+    if (!budgetInput) return;
     try {
-      await apiPut(`/api/finance/budget/${id}`, { amount: parseInt(editBudgetInput.amount, 10), category: editBudgetInput.category, type: view });
-      setEditingBudgetId(null);
+      await apiPost('/api/finance/budget', { month, amount: parseInt(budgetInput, 10), category: budgetCategory, type: view });
+      setShowBudgetForm(false);
+      setBudgetInput('');
       fetchData();
     } catch (err) {
       alert(err.message);
@@ -136,34 +128,6 @@ export default function FinancePage() {
     if (!confirm('Delete this budget?')) return;
     try {
       await apiDelete(`/api/finance/budget/${id}`);
-      fetchData();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  const handleEditGoal = async (e, id) => {
-    e.preventDefault();
-    try {
-      await apiPut(`/api/finance/goals/${id}`, { 
-        title: editGoalInput.title, 
-        target_amount: parseInt(editGoalInput.target_amount, 10),
-        deadline: editGoalInput.deadline || null
-      });
-      setEditingGoalId(null);
-      fetchData();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  const handleSetBudget = async (e) => {
-    e.preventDefault();
-    if (!budgetInput) return;
-    try {
-      await apiPost('/api/finance/budget', { month, amount: parseInt(budgetInput, 10), category: budgetCategory, type: view });
-      setShowBudgetForm(false);
-      setBudgetInput('');
       fetchData();
     } catch (err) {
       alert(err.message);
@@ -198,31 +162,8 @@ export default function FinancePage() {
     }
   };
 
-  const handleEditContribSubmit = async (e, contribId) => {
-    e.preventDefault();
-    const amount = parseInt(editContribInput.amount, 10);
-    if (isNaN(amount) || amount <= 0) return;
-    try {
-      await apiPut(`/api/finance/goals/contributions/${contribId}`, { amount, instrument: editContribInput.instrument });
-      setEditingContribId(null);
-      fetchData();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  const handleDeleteContrib = async (contribId) => {
-    if (!confirm('Delete this contribution?')) return;
-    try {
-      await apiDelete(`/api/finance/goals/contributions/${contribId}`);
-      fetchData();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
   const handleDeleteGoal = async (goalId) => {
-    if (!confirm('Are you sure you want to delete this saving goal and all its contributions?')) return;
+    if (!confirm('Delete this saving goal?')) return;
     try {
       await apiDelete(`/api/finance/goals/${goalId}`);
       fetchData();
@@ -267,7 +208,6 @@ export default function FinancePage() {
     });
   };
 
-  // Top spending calculation
   const getTopSpendings = () => {
     if (!data?.entries) return [];
     const expenses = data.entries.filter(e => e.type === 'expense');
@@ -289,11 +229,8 @@ export default function FinancePage() {
       .slice(0, 5);
   };
 
-  // Month-over-Month spending comparison calculation
   const getMonthComparison = () => {
     const currentSpent = data?.summary?.totalExpense || 0;
-    
-    // Look for previous month in trends
     let previousSpent = 0;
     if (trendData?.trends && trendData.trends.length >= 2) {
       const currentMonthIndex = trendData.trends.findIndex(t => t.month === month);
@@ -323,242 +260,208 @@ export default function FinancePage() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-24">
-        <div className="spinner !w-10 !h-10 mb-3" />
-        <p className="text-sm text-gray-400">Loading your finances...</p>
+        <div className="spinner !w-8 !h-8 mb-2.5" />
+        <p className="text-xs text-gray-500">Loading financial data...</p>
       </div>
     );
   }
 
   return (
-    <div className="animate-fade-in px-3 sm:px-4 pb-20 max-w-4xl mx-auto text-white">
+    <div className="animate-fade-in px-3 sm:px-4 pb-20 max-w-3xl mx-auto text-white space-y-4">
       
-      {/* Top Header */}
-      <div className="flex items-center justify-between mb-5">
+      {/* Top Bar */}
+      <div className="flex items-center justify-between pt-1">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold flex items-center gap-2">
-            Finance <span>💰</span>
-          </h1>
-          <p className="text-xs text-gray-400">Track shared & personal expenses with ease</p>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">Finance</h1>
+          <p className="text-xs text-gray-500">Expense tracking & financial overview</p>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Quick Scan Receipt Header Button */}
           <button
             type="button"
             onClick={() => setShowScannerModal(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-green-500 hover:bg-green-600 text-black text-xs font-bold transition-all shadow-md shadow-green-500/20 active:scale-95"
-            title="Scan receipt"
+            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-medium transition-colors"
           >
-            <span>🧾</span>
-            <span className="hidden sm:inline">Scan Receipt</span>
+            Scan Receipt
           </button>
 
-          {/* Add Entry Toggle Button */}
           <button
             onClick={() => setShowForm(!showForm)}
-            className="btn-primary text-xs sm:text-sm py-2 px-4 rounded-2xl flex items-center gap-1"
+            className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-gray-200 text-black text-xs font-semibold transition-colors"
           >
-            {showForm ? '✕ Close' : '+ Add Transaction'}
+            {showForm ? 'Close' : '+ New Entry'}
           </button>
         </div>
       </div>
 
-      {/* Money Lover Style Total Balance Card with Eye Toggle */}
-      <div className="bg-[#141414] rounded-[2.5rem] p-5 sm:p-6 border border-white/10 shadow-2xl mb-5 relative overflow-hidden">
-        <div className="flex items-center justify-between mb-2">
+      {/* Modern Balance Card */}
+      <div className="bg-[#121212] rounded-2xl p-5 border border-white/10 shadow-lg space-y-4">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-xs uppercase tracking-wider font-bold text-gray-400">Total Balance</span>
+            <span className="text-[11px] uppercase tracking-wider font-medium text-gray-400">Net Balance</span>
             <button
               type="button"
               onClick={() => setHideBalance(!hideBalance)}
-              className="text-gray-400 hover:text-white p-1 rounded-full transition-colors text-sm"
-              title={hideBalance ? 'Show balance' : 'Hide balance'}
+              className="text-gray-500 hover:text-gray-300 text-xs transition-colors"
             >
-              {hideBalance ? '🙈' : '👁️'}
+              {hideBalance ? 'Show' : 'Hide'}
             </button>
           </div>
 
-          <span className="text-[11px] px-3 py-1 rounded-full bg-white/10 text-gray-300 font-semibold">
-            {view === 'personal' ? '👤 Personal View' : '🤝 Shared Couple View'}
-          </span>
+          <div className="flex rounded-lg p-0.5 bg-black/40 border border-white/10 text-xs">
+            <button
+              onClick={() => setView('personal')}
+              className={`px-2.5 py-1 rounded-md transition-all ${
+                view === 'personal' ? 'bg-white text-black font-semibold' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Personal
+            </button>
+            <button
+              onClick={() => setView('shared')}
+              className={`px-2.5 py-1 rounded-md transition-all ${
+                view === 'shared' ? 'bg-white text-black font-semibold' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Shared
+            </button>
+          </div>
         </div>
 
-        <div className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white mb-4">
+        <div className="text-3xl font-bold text-white tracking-tight">
           {displayAmount(data?.summary?.netBalance || 0)}
         </div>
 
-        {/* Income / Expense Quick Sub-Pills */}
-        <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/10">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-green-500/10 border border-green-500/20 flex items-center justify-center text-green-400 text-sm font-bold">
-              ↓
-            </div>
-            <div>
-              <p className="text-[10px] uppercase font-bold text-gray-400">Total Income</p>
-              <p className="text-sm sm:text-base font-bold text-green-400">{displayAmount(data?.summary?.totalIncome || 0)}</p>
-            </div>
+        {/* Sub Income / Expense Row */}
+        <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/5 text-xs">
+          <div>
+            <span className="text-gray-500 block mb-0.5 font-medium">Income</span>
+            <span className="font-semibold text-emerald-400 text-sm">
+              {displayAmount(data?.summary?.totalIncome || 0)}
+            </span>
           </div>
-
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 text-sm font-bold">
-              ↑
-            </div>
-            <div>
-              <p className="text-[10px] uppercase font-bold text-gray-400">Total Expense</p>
-              <p className="text-sm sm:text-base font-bold text-red-400">{displayAmount(data?.summary?.totalExpense || 0)}</p>
-            </div>
+          <div>
+            <span className="text-gray-500 block mb-0.5 font-medium">Expense</span>
+            <span className="font-semibold text-rose-400 text-sm">
+              {displayAmount(data?.summary?.totalExpense || 0)}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Main Tabs: Transactions | Planning | Reports */}
-      <div className="flex bg-[#141414] p-1.5 rounded-full border border-white/10 mb-5 text-xs sm:text-sm font-bold">
+      {/* Segmented Navigation Tabs */}
+      <div className="flex bg-[#121212] p-1 rounded-xl border border-white/10 text-xs font-medium">
         {[
-          { id: 'transactions', label: 'Transactions', icon: '📝' },
-          { id: 'planning', label: 'Planning & Goals', icon: '🎯' },
-          { id: 'reports', label: 'Analytics & Reports', icon: '📊' }
+          { id: 'transactions', label: 'Transactions' },
+          { id: 'planning', label: 'Planning' },
+          { id: 'reports', label: 'Reports' }
         ].map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 py-2.5 rounded-full transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-2 rounded-lg transition-all ${
               activeTab === tab.id
-                ? 'bg-white text-black shadow-md font-extrabold'
+                ? 'bg-white text-black font-semibold shadow-sm'
                 : 'text-gray-400 hover:text-white'
             }`}
           >
-            <span>{tab.icon}</span>
-            <span>{tab.label}</span>
+            {tab.label}
           </button>
         ))}
       </div>
 
-      {/* Add Transaction Inline Form Drawer */}
+      {/* Inline Form */}
       {showForm && (
-        <div className="mb-6">
-          <FinanceForm 
-            onEntryCreated={handleEntryCreated} 
-            onCancel={() => setShowForm(false)} 
-          />
-        </div>
+        <FinanceForm 
+          onEntryCreated={handleEntryCreated} 
+          onCancel={() => setShowForm(false)} 
+        />
       )}
 
-      {/* View Filter Pill Switcher (Personal vs Shared) */}
-      <div className="flex flex-col sm:flex-row gap-2 mb-5">
-        <div className="flex bg-[#141414] p-1.5 rounded-full border border-white/10 flex-1">
-          <button
-            onClick={() => setView('personal')}
-            className={`flex-1 py-2 text-xs sm:text-sm font-bold rounded-full transition-all ${
-              view === 'personal' ? 'bg-green-500 text-black shadow-sm' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            👤 Personal Transactions
-          </button>
-          <button
-            onClick={() => setView('shared')}
-            className={`flex-1 py-2 text-xs sm:text-sm font-bold rounded-full transition-all ${
-              view === 'shared' ? 'bg-green-500 text-black shadow-sm' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            🤝 Shared with Partner
-          </button>
-        </div>
-
-        {/* Month Selector Bar */}
-        <div className="bg-[#141414] rounded-full px-4 py-1.5 flex items-center justify-between border border-white/10 sm:w-64">
-          <button onClick={() => changeMonth(-1)} className="p-1 rounded-full hover:bg-white/10 transition-colors text-white font-bold">
-            ‹
-          </button>
-          <span className="text-xs sm:text-sm font-bold text-green-400">{getMonthLabel()}</span>
-          <button onClick={() => changeMonth(1)} className="p-1 rounded-full hover:bg-white/10 transition-colors text-white font-bold">
-            ›
-          </button>
-        </div>
+      {/* Month Selector Bar */}
+      <div className="flex items-center justify-between bg-[#121212] rounded-xl px-4 py-2 border border-white/10 text-xs">
+        <button onClick={() => changeMonth(-1)} className="text-gray-400 hover:text-white font-bold p-1">
+          ‹ Previous
+        </button>
+        <span className="font-semibold text-gray-200">{getMonthLabel()}</span>
+        <button onClick={() => changeMonth(1)} className="text-gray-400 hover:text-white font-bold p-1">
+          Next ›
+        </button>
       </div>
 
       {/* ───────────────────────────────────────────────────────────── */}
-      {/* TAB 1: TRANSACTIONS (Money Lover Dashboard Experience) */}
+      {/* TAB 1: TRANSACTIONS */}
       {/* ───────────────────────────────────────────────────────────── */}
       {activeTab === 'transactions' && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           
-          {/* Money Lover "Report this month" Comparison Card */}
-          <div className="bg-[#141414] rounded-[2.5rem] p-5 border border-white/10 shadow-xl">
-            <div className="flex items-center justify-between mb-3">
+          {/* Monthly Spending Comparison */}
+          <div className="bg-[#121212] rounded-2xl p-4 border border-white/10 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
               <div>
-                <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400">Report This Month</p>
+                <span className="text-[11px] uppercase tracking-wider font-medium text-gray-400">Monthly Spending</span>
                 <div className="flex items-baseline gap-2 mt-0.5">
-                  <span className="text-xl sm:text-2xl font-extrabold text-white">
+                  <span className="text-lg font-bold text-white">
                     {displayAmount(monthComp.currentSpent)}
                   </span>
                   {monthComp.previousSpent > 0 && (
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                      monthComp.isDecrease ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                    <span className={`text-[11px] font-medium ${
+                      monthComp.isDecrease ? 'text-emerald-400' : 'text-rose-400'
                     }`}>
                       {monthComp.isDecrease ? '↓' : '↑'} {Math.abs(monthComp.diffPercent)}% vs last month
                     </span>
                   )}
                 </div>
               </div>
-
-              <button 
-                onClick={() => setActiveTab('reports')}
-                className="text-xs text-green-400 font-bold hover:underline"
-              >
-                See reports ›
-              </button>
             </div>
 
-            {/* Simple Visual Comparison Bars */}
-            <div className="pt-2">
-              <div className="h-28 sm:h-32 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={[
-                      { name: 'Last month', amount: monthComp.previousSpent },
-                      { name: 'This month', amount: monthComp.currentSpent }
-                    ]}
-                    margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
-                  >
-                    <XAxis dataKey="name" stroke="#888" fontSize={11} tickLine={false} axisLine={false} />
-                    <Tooltip 
-                      formatter={(val) => [formatRp(val), 'Spent']}
-                      contentStyle={{ backgroundColor: '#1e1e1e', border: '1px solid #333', borderRadius: '12px' }}
-                    />
-                    <Bar dataKey="amount" fill="#ef4444" radius={[8, 8, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+            <div className="h-24 w-full pt-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={[
+                    { name: 'Last month', amount: monthComp.previousSpent },
+                    { name: 'This month', amount: monthComp.currentSpent }
+                  ]}
+                  margin={{ top: 5, right: 5, left: 5, bottom: 0 }}
+                >
+                  <XAxis dataKey="name" stroke="#666" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip 
+                    formatter={(val) => [formatRp(val), 'Spent']}
+                    contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '8px', fontSize: '11px' }}
+                  />
+                  <Bar dataKey="amount" fill="#e11d48" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Money Lover "Top spending" Breakdown Card */}
+          {/* Top Spending Categories */}
           {topSpendings.length > 0 && (
-            <div className="bg-[#141414] rounded-[2.5rem] p-5 border border-white/10 shadow-xl space-y-3">
-              <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Top Spending</h3>
-                <span className="text-[11px] text-gray-400">{topSpendings.length} categories</span>
+            <div className="bg-[#121212] rounded-2xl p-4 border border-white/10 shadow-sm space-y-2.5">
+              <div className="flex items-center justify-between pb-1.5 border-b border-white/5">
+                <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Top Spending</span>
+                <span className="text-[11px] text-gray-500">{topSpendings.length} categories</span>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {topSpendings.map(item => (
                   <div key={item.category} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs sm:text-sm">
-                      <div className="flex items-center gap-2.5">
-                        <span className="w-7 h-7 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center text-sm">
-                          {getCategoryIcon(item.category)}
-                        </span>
-                        <span className="font-semibold text-white">{item.category}</span>
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <span 
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: getCategoryColor(item.category) }}
+                        />
+                        <span className="text-gray-200 font-medium">{item.category}</span>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-gray-400 font-mono text-xs">{item.percentage}%</span>
-                        <span className="font-bold text-white">{displayAmount(item.amount)}</span>
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-gray-500 font-mono text-[11px]">{item.percentage}%</span>
+                        <span className="font-semibold text-white">{displayAmount(item.amount)}</span>
                       </div>
                     </div>
-                    {/* Progress bar */}
-                    <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
+                    <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
                       <div 
-                        className="h-full rounded-full transition-all duration-500"
+                        className="h-full rounded-full transition-all duration-300"
                         style={{ 
                           width: `${item.percentage}%`,
                           backgroundColor: getCategoryColor(item.category)
@@ -571,112 +474,97 @@ export default function FinancePage() {
             </div>
           )}
 
-          {/* Recent Transactions List (Money Lover Layout) */}
-          <div className="bg-[#141414] rounded-[2.5rem] p-5 border border-white/10 shadow-xl">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-3">
+          {/* Transactions List */}
+          <div className="bg-[#121212] rounded-2xl p-4 border border-white/10 shadow-sm space-y-2">
+            <div className="flex items-center justify-between pb-2 border-b border-white/5">
               <div className="flex items-center gap-2">
-                <h3 className="font-bold text-sm text-white uppercase tracking-wider">
-                  {selectedCategory ? `${selectedCategory} Transactions` : 'Recent Transactions'}
-                </h3>
+                <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                  {selectedCategory ? `${selectedCategory}` : 'All Transactions'}
+                </span>
                 {selectedCategory && (
                   <button 
                     onClick={() => setSelectedCategory(null)} 
-                    className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-0.5 rounded-md"
+                    className="text-[10px] text-gray-400 hover:text-white underline"
                   >
-                    Clear Filter ✕
+                    Clear
                   </button>
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 text-[11px] text-gray-400">
                 <button
                   onClick={() => toggleSort('date')}
-                  className="text-xs text-gray-400 hover:text-white px-2 py-1 bg-white/5 rounded-lg"
+                  className="hover:text-white"
                 >
                   Date {sortField === 'date' && (sortDir === 'asc' ? '↑' : '↓')}
                 </button>
+                <span>•</span>
                 <button
                   onClick={() => toggleSort('amount')}
-                  className="text-xs text-gray-400 hover:text-white px-2 py-1 bg-white/5 rounded-lg"
+                  className="hover:text-white"
                 >
                   Amount {sortField === 'amount' && (sortDir === 'asc' ? '↑' : '↓')}
                 </button>
               </div>
             </div>
 
-            {/* List of Entries */}
             {sortedEntries().length === 0 ? (
-              <div className="p-8 text-center text-gray-500 space-y-2">
-                <div className="text-4xl">🧾</div>
-                <p className="text-sm">No transactions found for this month.</p>
-                <button
-                  onClick={() => setShowForm(true)}
-                  className="mt-2 text-xs font-bold text-green-400 hover:underline"
-                >
-                  + Add your first transaction
-                </button>
+              <div className="py-8 text-center text-gray-500 text-xs">
+                No transactions recorded for this month.
               </div>
             ) : (
               <div className="divide-y divide-white/5">
                 {sortedEntries().map(entry => (
                   <div 
                     key={entry.id}
-                    className="py-3 sm:py-3.5 flex items-center justify-between hover:bg-white/5 px-2 rounded-2xl transition-all group"
+                    className="py-2.5 flex items-center justify-between hover:bg-white/[0.02] px-1.5 rounded-lg transition-colors group"
                   >
-                    {/* Left: Icon, Category & Note */}
-                    <div className="flex items-center gap-3">
-                      <div 
-                        className="w-11 h-11 rounded-2xl flex items-center justify-center text-xl bg-black/40 border border-white/10 flex-shrink-0"
-                        style={{ borderColor: `${getCategoryColor(entry.category)}50` }}
-                      >
-                        {getCategoryIcon(entry.category)}
-                      </div>
-
-                      <div className="flex flex-col">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-white">{entry.category}</span>
+                    {/* Left: Category dot, Title & Date */}
+                    <div className="flex items-center gap-2.5">
+                      <span 
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: getCategoryColor(entry.category) }}
+                      />
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium text-xs text-white">{entry.category}</span>
                           {entry.split_type === 'shared' && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-purple-500/20 text-purple-300 font-bold">
+                            <span className="text-[9px] px-1.5 py-0.2 bg-white/10 text-gray-300 rounded font-medium">
                               Shared
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-gray-400">
-                          <span>{entry.note || (entry.type === 'income' ? 'Income' : 'Expense')}</span>
-                          <span>•</span>
-                          <span>{entry.date.split('T')[0]}</span>
-                        </div>
+                        <p className="text-[11px] text-gray-500">
+                          {entry.note || (entry.type === 'income' ? 'Income' : 'Expense')} • {entry.date.split('T')[0]}
+                        </p>
                       </div>
                     </div>
 
-                    {/* Right: Amount & Actions */}
-                    <div className="text-right flex items-center gap-3">
-                      <div className="flex flex-col items-end">
-                        <span className={`font-extrabold text-sm sm:text-base ${
-                          entry.type === 'income' ? 'text-green-400' : 'text-red-400'
+                    {/* Right: Amount & Options */}
+                    <div className="flex items-center gap-2.5 text-right">
+                      <div>
+                        <span className={`font-semibold text-xs ${
+                          entry.type === 'income' ? 'text-emerald-400' : 'text-white'
                         }`}>
                           {entry.type === 'income' ? '+' : '-'} {displayAmount(entry.amount)}
                         </span>
-                        <span className="text-[10px] text-gray-500">
-                          {entry.display_name || entry.username}
-                        </span>
+                        <p className="text-[10px] text-gray-500">{entry.display_name || entry.username}</p>
                       </div>
 
-                      {/* Hover Action Buttons */}
-                      <div className="flex items-center gap-1 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1 opacity-70 sm:opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => startEditEntry(entry)}
-                          className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white text-xs"
-                          title="Edit Entry"
+                          className="p-1 text-gray-400 hover:text-white text-xs"
+                          title="Edit"
                         >
-                          ✏️
+                          ✎
                         </button>
                         <button
                           onClick={() => handleDelete(entry.id)}
-                          className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/40 text-red-400 text-xs"
-                          title="Delete Entry"
+                          className="p-1 text-red-400 hover:text-red-300 text-xs"
+                          title="Delete"
                         >
-                          🗑️
+                          ✕
                         </button>
                       </div>
                     </div>
@@ -686,41 +574,32 @@ export default function FinancePage() {
             )}
           </div>
 
-          {/* Quick Settlement Summary if shared */}
-          {view === 'shared' && data?.settlement && !data.settlement.settled && (
-            <div className="bg-purple-500/10 border border-purple-500/20 rounded-[2rem] p-4 text-center">
-              <p className="text-xs text-purple-300 font-bold">
-                🤝 Settlement Status: <span className="text-white">{data.settlement.owes}</span> owes <span className="text-white">{data.settlement.owedTo}</span> {displayAmount(data.settlement.amount)}
-              </p>
-            </div>
-          )}
-
         </div>
       )}
 
       {/* ───────────────────────────────────────────────────────────── */}
-      {/* TAB 2: PLANNING (Budgets, Goals & 50/30/20) */}
+      {/* TAB 2: PLANNING */}
       {/* ───────────────────────────────────────────────────────────── */}
       {activeTab === 'planning' && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           
           {/* 50/30/20 Rule Card */}
           {data?.rule503020 && (
-            <div className="bg-[#141414] rounded-[2.5rem] p-5 border border-white/10 shadow-xl space-y-4">
-              <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                <h3 className="font-bold text-sm text-white uppercase tracking-wider">50 / 30 / 20 Budget Tracker</h3>
-                <span className="text-xs text-green-400 font-semibold">Healthy Targets</span>
+            <div className="bg-[#121212] rounded-2xl p-4 border border-white/10 shadow-sm space-y-3">
+              <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">50 / 30 / 20 Budget Target</span>
+                <span className="text-[11px] text-emerald-400 font-medium">Income Guide</span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {/* Needs 50% */}
-                <div className="bg-white/5 rounded-2xl p-4 border border-white/5 space-y-2">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-blue-400">Needs (50%)</span>
-                    <span className="text-gray-400">Target: {displayAmount(data.rule503020.needs.target)}</span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                {/* Needs */}
+                <div className="bg-white/[0.02] rounded-xl p-3 border border-white/5 space-y-1">
+                  <div className="flex justify-between text-gray-400 text-[11px]">
+                    <span>Needs (50%)</span>
+                    <span>{displayAmount(data.rule503020.needs.target)}</span>
                   </div>
-                  <p className="text-lg font-extrabold text-white">{displayAmount(data.rule503020.needs.spent)}</p>
-                  <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
+                  <p className="text-sm font-semibold text-white">{displayAmount(data.rule503020.needs.spent)}</p>
+                  <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
                     <div 
                       className="bg-blue-400 h-full rounded-full"
                       style={{ width: `${Math.min(100, Math.round((data.rule503020.needs.spent / (data.rule503020.needs.target || 1)) * 100))}%` }}
@@ -728,14 +607,14 @@ export default function FinancePage() {
                   </div>
                 </div>
 
-                {/* Wants 30% */}
-                <div className="bg-white/5 rounded-2xl p-4 border border-white/5 space-y-2">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-purple-400">Wants (30%)</span>
-                    <span className="text-gray-400">Target: {displayAmount(data.rule503020.wants.target)}</span>
+                {/* Wants */}
+                <div className="bg-white/[0.02] rounded-xl p-3 border border-white/5 space-y-1">
+                  <div className="flex justify-between text-gray-400 text-[11px]">
+                    <span>Wants (30%)</span>
+                    <span>{displayAmount(data.rule503020.wants.target)}</span>
                   </div>
-                  <p className="text-lg font-extrabold text-white">{displayAmount(data.rule503020.wants.spent)}</p>
-                  <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
+                  <p className="text-sm font-semibold text-white">{displayAmount(data.rule503020.wants.spent)}</p>
+                  <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
                     <div 
                       className="bg-purple-400 h-full rounded-full"
                       style={{ width: `${Math.min(100, Math.round((data.rule503020.wants.spent / (data.rule503020.wants.target || 1)) * 100))}%` }}
@@ -743,16 +622,16 @@ export default function FinancePage() {
                   </div>
                 </div>
 
-                {/* Savings 20% */}
-                <div className="bg-white/5 rounded-2xl p-4 border border-white/5 space-y-2">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-green-400">Savings (20%)</span>
-                    <span className="text-gray-400">Target: {displayAmount(data.rule503020.savings.target)}</span>
+                {/* Savings */}
+                <div className="bg-white/[0.02] rounded-xl p-3 border border-white/5 space-y-1">
+                  <div className="flex justify-between text-gray-400 text-[11px]">
+                    <span>Savings (20%)</span>
+                    <span>{displayAmount(data.rule503020.savings.target)}</span>
                   </div>
-                  <p className="text-lg font-extrabold text-white">{displayAmount(data.rule503020.savings.spent)}</p>
-                  <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
+                  <p className="text-sm font-semibold text-white">{displayAmount(data.rule503020.savings.spent)}</p>
+                  <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
                     <div 
-                      className="bg-green-400 h-full rounded-full"
+                      className="bg-emerald-400 h-full rounded-full"
                       style={{ width: `${Math.min(100, Math.round((data.rule503020.savings.spent / (data.rule503020.savings.target || 1)) * 100))}%` }}
                     />
                   </div>
@@ -761,60 +640,49 @@ export default function FinancePage() {
             </div>
           )}
 
-          {/* Monthly Budgets List & Add Budget */}
-          <div className="bg-[#141414] rounded-[2.5rem] p-5 border border-white/10 shadow-xl space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div>
-                <h3 className="font-bold text-sm text-white uppercase tracking-wider">Category Budgets</h3>
-                <p className="text-[11px] text-gray-400">Set spending limits for {getMonthLabel()}</p>
-              </div>
+          {/* Category Budgets */}
+          <div className="bg-[#121212] rounded-2xl p-4 border border-white/10 shadow-sm space-y-3">
+            <div className="flex items-center justify-between border-b border-white/5 pb-2">
+              <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Budgets</span>
               <button
                 onClick={() => setShowBudgetForm(!showBudgetForm)}
-                className="text-xs font-bold px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                className="text-xs text-white font-medium hover:underline"
               >
-                {showBudgetForm ? 'Cancel' : '+ Set Budget'}
+                {showBudgetForm ? 'Cancel' : '+ Add Budget'}
               </button>
             </div>
 
-            {/* Set Budget Form */}
             {showBudgetForm && (
-              <form onSubmit={handleSetBudget} className="p-4 bg-white/5 rounded-2xl border border-white/5 space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[11px] text-gray-400 block mb-1">Category</label>
-                    <input
-                      type="text"
-                      value={budgetCategory}
-                      onChange={(e) => setBudgetCategory(e.target.value)}
-                      placeholder="e.g. Food or Overall"
-                      className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] text-gray-400 block mb-1">Budget Limit (IDR)</label>
-                    <input
-                      type="number"
-                      value={budgetInput}
-                      onChange={(e) => setBudgetInput(e.target.value)}
-                      placeholder="0"
-                      className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
-                      min="1"
-                      required
-                    />
-                  </div>
+              <form onSubmit={handleSetBudget} className="p-3 bg-white/[0.02] rounded-xl border border-white/5 space-y-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <input
+                    type="text"
+                    value={budgetCategory}
+                    onChange={(e) => setBudgetCategory(e.target.value)}
+                    placeholder="Category (e.g. Food or Overall)"
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white"
+                    required
+                  />
+                  <input
+                    type="number"
+                    value={budgetInput}
+                    onChange={(e) => setBudgetInput(e.target.value)}
+                    placeholder="Budget limit (IDR)"
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white"
+                    min="1"
+                    required
+                  />
                 </div>
-                <button type="submit" className="w-full py-2 bg-green-500 text-black font-bold rounded-xl text-xs">
+                <button type="submit" className="w-full py-1.5 bg-white text-black font-semibold rounded-lg text-xs">
                   Save Budget
                 </button>
               </form>
             )}
 
-            {/* Active Budgets List */}
             {data?.budgetList?.length === 0 ? (
-              <p className="text-center py-6 text-xs text-gray-500">No active budgets set for this month.</p>
+              <p className="text-center py-4 text-xs text-gray-500">No category budgets set.</p>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {data?.budgetList?.map(b => {
                   const spent = b.category === 'Overall' 
                     ? data?.summary?.totalExpense || 0
@@ -822,22 +690,19 @@ export default function FinancePage() {
                   const pct = Math.round((spent / (b.amount || 1)) * 100);
 
                   return (
-                    <div key={b.id} className="p-3.5 bg-white/5 rounded-2xl border border-white/5 space-y-2">
-                      <div className="flex items-center justify-between text-xs sm:text-sm">
-                        <span className="font-bold text-white flex items-center gap-2">
-                          <span>{getCategoryIcon(b.category)}</span>
-                          <span>{b.category} Budget</span>
-                        </span>
-                        <div className="flex items-center gap-2">
+                    <div key={b.id} className="p-3 bg-white/[0.02] rounded-xl border border-white/5 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium text-white">{b.category}</span>
+                        <div className="flex items-center gap-2 text-xs">
                           <span className="text-gray-400">{displayAmount(spent)} / {displayAmount(b.amount)}</span>
-                          <button onClick={() => handleDeleteBudget(b.id)} className="text-red-400 text-xs hover:underline">
-                            Delete
+                          <button onClick={() => handleDeleteBudget(b.id)} className="text-red-400 hover:text-red-300">
+                            ✕
                           </button>
                         </div>
                       </div>
-                      <div className="w-full bg-white/10 h-2 rounded-full overflow-hidden">
+                      <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
                         <div 
-                          className={`h-full rounded-full ${pct > 100 ? 'bg-red-500' : 'bg-green-500'}`}
+                          className={`h-full rounded-full ${pct > 100 ? 'bg-rose-500' : 'bg-white'}`}
                           style={{ width: `${Math.min(100, pct)}%` }}
                         />
                       </div>
@@ -849,112 +714,99 @@ export default function FinancePage() {
           </div>
 
           {/* Savings Goals */}
-          <div className="bg-[#141414] rounded-[2.5rem] p-5 border border-white/10 shadow-xl space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div>
-                <h3 className="font-bold text-sm text-white uppercase tracking-wider">Savings Goals</h3>
-                <p className="text-[11px] text-gray-400">Save for dream trips, gifts, and future plans</p>
-              </div>
+          <div className="bg-[#121212] rounded-2xl p-4 border border-white/10 shadow-sm space-y-3">
+            <div className="flex items-center justify-between border-b border-white/5 pb-2">
+              <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Savings Goals</span>
               <button
                 onClick={() => setShowGoalForm(!showGoalForm)}
-                className="text-xs font-bold px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                className="text-xs text-white font-medium hover:underline"
               >
                 {showGoalForm ? 'Cancel' : '+ New Goal'}
               </button>
             </div>
 
-            {/* Create Goal Form */}
             {showGoalForm && (
-              <form onSubmit={handleCreateGoal} className="p-4 bg-white/5 rounded-2xl border border-white/5 space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[11px] text-gray-400 block mb-1">Goal Title</label>
-                    <input
-                      type="text"
-                      value={goalInput.title}
-                      onChange={(e) => setGoalInput({ ...goalInput, title: e.target.value })}
-                      placeholder="e.g. Bali Trip or House DP"
-                      className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] text-gray-400 block mb-1">Target Amount (IDR)</label>
-                    <input
-                      type="number"
-                      value={goalInput.target_amount}
-                      onChange={(e) => setGoalInput({ ...goalInput, target_amount: e.target.value })}
-                      placeholder="0"
-                      className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
-                      min="1"
-                      required
-                    />
-                  </div>
+              <form onSubmit={handleCreateGoal} className="p-3 bg-white/[0.02] rounded-xl border border-white/5 space-y-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <input
+                    type="text"
+                    value={goalInput.title}
+                    onChange={(e) => setGoalInput({ ...goalInput, title: e.target.value })}
+                    placeholder="Goal title (e.g. Travel, Emergency)"
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white"
+                    required
+                  />
+                  <input
+                    type="number"
+                    value={goalInput.target_amount}
+                    onChange={(e) => setGoalInput({ ...goalInput, target_amount: e.target.value })}
+                    placeholder="Target amount (IDR)"
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white"
+                    min="1"
+                    required
+                  />
                 </div>
-                <button type="submit" className="w-full py-2 bg-green-500 text-black font-bold rounded-xl text-xs">
+                <button type="submit" className="w-full py-1.5 bg-white text-black font-semibold rounded-lg text-xs">
                   Create Goal
                 </button>
               </form>
             )}
 
-            {/* Goals Cards */}
             {goals.length === 0 ? (
-              <p className="text-center py-6 text-xs text-gray-500">No active savings goals found.</p>
+              <p className="text-center py-4 text-xs text-gray-500">No savings goals created.</p>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {goals.map(goal => {
                   const pct = Math.round(((goal.current_amount || 0) / (goal.target_amount || 1)) * 100);
                   return (
-                    <div key={goal.id} className="p-4 bg-white/5 rounded-2xl border border-white/5 space-y-3 relative group">
-                      <div className="flex justify-between items-start">
+                    <div key={goal.id} className="p-3 bg-white/[0.02] rounded-xl border border-white/5 space-y-2">
+                      <div className="flex justify-between items-start text-xs">
                         <div>
-                          <h4 className="font-bold text-sm text-white">{goal.title}</h4>
-                          <p className="text-xs text-gray-400 mt-0.5">
+                          <h4 className="font-semibold text-white">{goal.title}</h4>
+                          <p className="text-gray-400 text-[11px]">
                             {displayAmount(goal.current_amount)} / {displayAmount(goal.target_amount)}
                           </p>
                         </div>
-                        <span className="text-xs font-bold text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full">
+                        <span className="text-[11px] font-semibold text-gray-300">
                           {pct}%
                         </span>
                       </div>
 
-                      <div className="w-full bg-white/10 h-2 rounded-full overflow-hidden">
+                      <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
                         <div 
-                          className="bg-green-500 h-full rounded-full transition-all duration-500"
+                          className="bg-white h-full rounded-full"
                           style={{ width: `${Math.min(100, pct)}%` }}
                         />
                       </div>
 
-                      {/* Contribute & Actions */}
-                      <div className="flex items-center justify-between pt-1">
+                      <div className="flex items-center justify-between text-xs pt-0.5">
                         <button
                           onClick={() => setContributeGoalId(contributeGoalId === goal.id ? null : goal.id)}
-                          className="text-xs font-bold text-green-400 hover:underline"
+                          className="text-gray-300 hover:text-white underline text-[11px]"
                         >
-                          + Add Contribution
+                          + Deposit
                         </button>
                         <button
                           onClick={() => handleDeleteGoal(goal.id)}
-                          className="text-xs text-red-400 hover:underline"
+                          className="text-red-400 hover:text-red-300 text-[11px]"
                         >
                           Delete
                         </button>
                       </div>
 
-                      {/* Inline Contribute Form */}
                       {contributeGoalId === goal.id && (
                         <form onSubmit={handleContributeSubmit} className="pt-2 border-t border-white/5 space-y-2">
                           <input
                             type="number"
                             value={contributeInput.amount}
                             onChange={(e) => setContributeInput({ ...contributeInput, amount: e.target.value })}
-                            placeholder="Amount to save (IDR)"
-                            className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
+                            placeholder="Deposit amount (IDR)"
+                            className="w-full bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white"
                             min="1"
                             required
                           />
-                          <button type="submit" className="w-full py-1.5 bg-green-500 text-black text-xs font-bold rounded-xl">
-                            Deposit
+                          <button type="submit" className="w-full py-1 bg-white text-black font-semibold text-xs rounded-lg">
+                            Save
                           </button>
                         </form>
                       )}
@@ -969,27 +821,27 @@ export default function FinancePage() {
       )}
 
       {/* ───────────────────────────────────────────────────────────── */}
-      {/* TAB 3: REPORTS (Charts & Deep Analytics) */}
+      {/* TAB 3: REPORTS */}
       {/* ───────────────────────────────────────────────────────────── */}
       {activeTab === 'reports' && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           
-          {/* Category Breakdown Donut */}
-          <div className="bg-[#141414] rounded-[2.5rem] p-5 border border-white/10 shadow-xl space-y-4">
-            <h3 className="font-bold text-sm text-white uppercase tracking-wider">Expense by Category</h3>
+          {/* Category Breakdown */}
+          <div className="bg-[#121212] rounded-2xl p-4 border border-white/10 shadow-sm space-y-3">
+            <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Category Breakdown</span>
             
             {data?.charts?.categoryBreakdown?.length === 0 ? (
-              <p className="text-center py-10 text-xs text-gray-500">No expense breakdown data for this month.</p>
+              <p className="text-center py-6 text-xs text-gray-500">No expense breakdown data available.</p>
             ) : (
-              <div className="h-64 w-full">
+              <div className="h-56 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={data.charts.categoryBreakdown}
                       cx="50%"
                       cy="50%"
-                      innerRadius={60}
-                      outerRadius={85}
+                      innerRadius={50}
+                      outerRadius={75}
                       paddingAngle={3}
                       dataKey="value"
                     >
@@ -999,7 +851,7 @@ export default function FinancePage() {
                     </Pie>
                     <Tooltip 
                       formatter={(val) => [formatRp(val), 'Amount']}
-                      contentStyle={{ backgroundColor: '#1e1e1e', border: '1px solid #333', borderRadius: '12px' }}
+                      contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '8px', fontSize: '11px' }}
                     />
                     <Legend />
                   </PieChart>
@@ -1008,24 +860,24 @@ export default function FinancePage() {
             )}
           </div>
 
-          {/* Month-over-Month Multi-Month Trend */}
+          {/* Monthly Trend */}
           {trendData?.trends && (
-            <div className="bg-[#141414] rounded-[2.5rem] p-5 border border-white/10 shadow-xl space-y-4">
-              <h3 className="font-bold text-sm text-white uppercase tracking-wider">Monthly Income vs Expense Trend</h3>
+            <div className="bg-[#121212] rounded-2xl p-4 border border-white/10 shadow-sm space-y-3">
+              <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Income vs Expense Trend</span>
               
-              <div className="h-64 w-full">
+              <div className="h-56 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={trendData.trends}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#222" />
-                    <XAxis dataKey="month" stroke="#777" fontSize={11} />
-                    <YAxis stroke="#777" fontSize={11} tickFormatter={(v) => `${v/1000000}M`} />
+                    <XAxis dataKey="month" stroke="#666" fontSize={10} />
+                    <YAxis stroke="#666" fontSize={10} tickFormatter={(v) => `${v/1000000}M`} />
                     <Tooltip 
                       formatter={(val) => [formatRp(val)]}
-                      contentStyle={{ backgroundColor: '#1e1e1e', border: '1px solid #333', borderRadius: '12px' }}
+                      contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '8px', fontSize: '11px' }}
                     />
                     <Legend />
-                    <Bar dataKey="income" fill="#22c55e" name="Income" radius={[6, 6, 0, 0]} />
-                    <Bar dataKey="expense" fill="#ef4444" name="Expense" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="income" fill="#10b981" name="Income" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="expense" fill="#f43f5e" name="Expense" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -1037,17 +889,17 @@ export default function FinancePage() {
 
       {/* Edit Entry Modal */}
       {editingEntryId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-md bg-[#141414] p-6 rounded-[2.5rem] border border-white/10 shadow-2xl space-y-4">
-            <h3 className="font-bold text-base text-white">Edit Transaction</h3>
-            <form onSubmit={handleEditEntry} className="space-y-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in text-white">
+          <div className="w-full max-w-sm bg-[#121212] p-5 rounded-2xl border border-white/10 shadow-2xl space-y-3">
+            <h3 className="font-semibold text-sm text-white">Edit Transaction</h3>
+            <form onSubmit={handleEditEntry} className="space-y-2.5">
               <div>
                 <label className="text-[11px] text-gray-400 block mb-1">Amount (IDR)</label>
                 <input
                   type="number"
                   value={editEntryInput.amount}
                   onChange={(e) => setEditEntryInput({ ...editEntryInput, amount: e.target.value })}
-                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-white font-bold"
+                  className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white font-semibold text-sm"
                   min="1"
                   required
                 />
@@ -1059,7 +911,7 @@ export default function FinancePage() {
                   type="text"
                   value={editEntryInput.category}
                   onChange={(e) => setEditEntryInput({ ...editEntryInput, category: e.target.value })}
-                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-white text-xs"
+                  className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-white text-xs"
                   required
                 />
               </div>
@@ -1070,7 +922,7 @@ export default function FinancePage() {
                   type="text"
                   value={editEntryInput.note}
                   onChange={(e) => setEditEntryInput({ ...editEntryInput, note: e.target.value })}
-                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-white text-xs"
+                  className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-white text-xs"
                 />
               </div>
 
@@ -1080,7 +932,7 @@ export default function FinancePage() {
                   type="date"
                   value={editEntryInput.date}
                   onChange={(e) => setEditEntryInput({ ...editEntryInput, date: e.target.value })}
-                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-white text-xs"
+                  className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-white text-xs"
                   required
                 />
               </div>
@@ -1089,15 +941,15 @@ export default function FinancePage() {
                 <button
                   type="button"
                   onClick={() => setEditingEntryId(null)}
-                  className="flex-1 py-2 bg-white/10 text-white rounded-xl text-xs font-semibold"
+                  className="flex-1 py-1.5 bg-white/10 text-white rounded-lg text-xs font-medium"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2 bg-green-500 text-black rounded-xl text-xs font-bold"
+                  className="flex-1 py-1.5 bg-white text-black rounded-lg text-xs font-semibold"
                 >
-                  Save Changes
+                  Save
                 </button>
               </div>
             </form>
@@ -1109,8 +961,8 @@ export default function FinancePage() {
       <ReceiptScannerModal
         isOpen={showScannerModal}
         onClose={() => setShowScannerModal(false)}
-        onApply={(scanned) => {
-          setShowForm(true);
+        onEntrySaved={() => {
+          fetchData();
         }}
       />
 
