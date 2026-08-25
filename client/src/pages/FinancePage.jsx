@@ -10,6 +10,17 @@ const formatRp = (amount) => {
   return `Rp ${Number(amount || 0).toLocaleString('id-ID')}`;
 };
 
+const formatDateStr = (dateVal) => {
+  if (!dateVal) return '';
+  try {
+    const str = String(dateVal);
+    if (str.includes('T')) return str.split('T')[0];
+    return str;
+  } catch {
+    return '';
+  }
+};
+
 export default function FinancePage() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
@@ -43,7 +54,7 @@ export default function FinancePage() {
   const [loading, setLoading] = useState(true);
   const [sortField, setSortField] = useState('date');
   const [sortDir, setSortDir] = useState('desc');
-  const [trendData, setTrendData] = useState(null);
+  const [trendData, setTrendData] = useState({ trends: [] });
   const [selectedCategory, setSelectedCategory] = useState(null);
 
   const fetchData = useCallback(async () => {
@@ -97,11 +108,11 @@ export default function FinancePage() {
   const startEditEntry = (entry) => {
     setEditingEntryId(entry.id);
     setEditEntryInput({
-      amount: entry.amount.toString(),
-      type: entry.type,
-      category: entry.category,
+      amount: entry.amount ? String(entry.amount) : '',
+      type: entry.type || 'expense',
+      category: entry.category || 'Food',
       note: entry.note || '',
-      date: entry.date.split('T')[0]
+      date: formatDateStr(entry.date) || new Date().toISOString().split('T')[0]
     });
   };
 
@@ -211,34 +222,34 @@ export default function FinancePage() {
   };
 
   const sortedEntries = () => {
-    if (!data?.entries) return [];
+    if (!data?.entries || !Array.isArray(data.entries)) return [];
     let entries = [...data.entries];
     if (selectedCategory) {
-      entries = entries.filter(e => e.category.toLowerCase() === selectedCategory.toLowerCase());
+      entries = entries.filter(e => (e.category || '').toLowerCase() === selectedCategory.toLowerCase());
     }
     return entries.sort((a, b) => {
-      let aVal, bVal;
       if (sortField === 'date') {
-        aVal = a.date;
-        bVal = b.date;
+        const dateA = a.date || '';
+        const dateB = b.date || '';
+        return sortDir === 'asc' ? dateA.localeCompare(dateB) : dateB.localeCompare(dateA);
       } else {
-        aVal = a.amount;
-        bVal = b.amount;
+        const amtA = Number(a.amount) || 0;
+        const amtB = Number(b.amount) || 0;
+        return sortDir === 'asc' ? amtA - amtB : amtB - amtA;
       }
-      if (sortDir === 'asc') return aVal > bVal ? 1 : -1;
-      return aVal < bVal ? 1 : -1;
     });
   };
 
   const getTopSpendings = () => {
-    if (!data?.entries) return [];
+    if (!data?.entries || !Array.isArray(data.entries)) return [];
     const expenses = data.entries.filter(e => e.type === 'expense');
-    const totalExpense = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const totalExpense = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
     if (totalExpense === 0) return [];
 
     const categoryMap = {};
     expenses.forEach(e => {
-      categoryMap[e.category] = (categoryMap[e.category] || 0) + e.amount;
+      const cat = e.category || 'Other';
+      categoryMap[cat] = (categoryMap[cat] || 0) + (Number(e.amount) || 0);
     });
 
     return Object.entries(categoryMap)
@@ -252,14 +263,15 @@ export default function FinancePage() {
   };
 
   const getMonthComparison = () => {
-    const currentSpent = data?.summary?.totalExpense || 0;
+    const currentSpent = Number(data?.summary?.totalExpense) || 0;
     let previousSpent = 0;
-    if (trendData?.trends && trendData.trends.length >= 2) {
-      const currentMonthIndex = trendData.trends.findIndex(t => t.month === month);
+    const trendsList = Array.isArray(trendData?.trends) ? trendData.trends : [];
+    if (trendsList.length >= 2) {
+      const currentMonthIndex = trendsList.findIndex(t => t.month === month);
       if (currentMonthIndex > 0) {
-        previousSpent = trendData.trends[currentMonthIndex - 1].expense || 0;
-      } else if (currentMonthIndex === -1 && trendData.trends.length > 0) {
-        previousSpent = trendData.trends[trendData.trends.length - 2]?.expense || 0;
+        previousSpent = Number(trendsList[currentMonthIndex - 1]?.expense) || 0;
+      } else if (currentMonthIndex === -1 && trendsList.length > 0) {
+        previousSpent = Number(trendsList[trendsList.length - 2]?.expense) || 0;
       }
     }
 
@@ -289,7 +301,7 @@ export default function FinancePage() {
   }
 
   return (
-    <div className="animate-fade-in px-3 sm:px-4 pb-20 max-w-3xl mx-auto text-white space-y-4">
+    <div className="animate-fade-in px-3 sm:px-4 pb-24 max-w-3xl mx-auto text-white space-y-4">
       
       {/* Top Bar */}
       <div className="flex items-center justify-between pt-1">
@@ -565,7 +577,7 @@ export default function FinancePage() {
                           )}
                         </div>
                         <p className="text-[11px] text-gray-500">
-                          {entry.note || (entry.type === 'income' ? 'Income' : 'Expense')} • {entry.date.split('T')[0]}
+                          {entry.note || (entry.type === 'income' ? 'Income' : 'Expense')} • {formatDateStr(entry.date)}
                         </p>
                       </div>
                     </div>
@@ -626,13 +638,13 @@ export default function FinancePage() {
                 <div className="bg-white/[0.02] rounded-xl p-3 border border-white/5 space-y-1">
                   <div className="flex justify-between text-gray-400 text-[11px]">
                     <span>Needs (50%)</span>
-                    <span>{displayAmount(data.rule503020.needs.target)}</span>
+                    <span>{displayAmount(data.rule503020.needs?.target || 0)}</span>
                   </div>
-                  <p className="text-sm font-semibold text-white">{displayAmount(data.rule503020.needs.spent)}</p>
+                  <p className="text-sm font-semibold text-white">{displayAmount(data.rule503020.needs?.spent || 0)}</p>
                   <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
                     <div 
                       className="bg-blue-400 h-full rounded-full"
-                      style={{ width: `${Math.min(100, Math.round((data.rule503020.needs.spent / (data.rule503020.needs.target || 1)) * 100))}%` }}
+                      style={{ width: `${Math.min(100, Math.round(((data.rule503020.needs?.spent || 0) / (data.rule503020.needs?.target || 1)) * 100))}%` }}
                     />
                   </div>
                 </div>
@@ -641,13 +653,13 @@ export default function FinancePage() {
                 <div className="bg-white/[0.02] rounded-xl p-3 border border-white/5 space-y-1">
                   <div className="flex justify-between text-gray-400 text-[11px]">
                     <span>Wants (30%)</span>
-                    <span>{displayAmount(data.rule503020.wants.target)}</span>
+                    <span>{displayAmount(data.rule503020.wants?.target || 0)}</span>
                   </div>
-                  <p className="text-sm font-semibold text-white">{displayAmount(data.rule503020.wants.spent)}</p>
+                  <p className="text-sm font-semibold text-white">{displayAmount(data.rule503020.wants?.spent || 0)}</p>
                   <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
                     <div 
                       className="bg-purple-400 h-full rounded-full"
-                      style={{ width: `${Math.min(100, Math.round((data.rule503020.wants.spent / (data.rule503020.wants.target || 1)) * 100))}%` }}
+                      style={{ width: `${Math.min(100, Math.round(((data.rule503020.wants?.spent || 0) / (data.rule503020.wants?.target || 1)) * 100))}%` }}
                     />
                   </div>
                 </div>
@@ -656,13 +668,13 @@ export default function FinancePage() {
                 <div className="bg-white/[0.02] rounded-xl p-3 border border-white/5 space-y-1">
                   <div className="flex justify-between text-gray-400 text-[11px]">
                     <span>Savings (20%)</span>
-                    <span>{displayAmount(data.rule503020.savings.target)}</span>
+                    <span>{displayAmount(data.rule503020.savings?.target || 0)}</span>
                   </div>
-                  <p className="text-sm font-semibold text-white">{displayAmount(data.rule503020.savings.spent)}</p>
+                  <p className="text-sm font-semibold text-white">{displayAmount(data.rule503020.savings?.spent || 0)}</p>
                   <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
                     <div 
                       className="bg-emerald-400 h-full rounded-full"
-                      style={{ width: `${Math.min(100, Math.round((data.rule503020.savings.spent / (data.rule503020.savings.target || 1)) * 100))}%` }}
+                      style={{ width: `${Math.min(100, Math.round(((data.rule503020.savings?.spent || 0) / (data.rule503020.savings?.target || 1)) * 100))}%` }}
                     />
                   </div>
                 </div>
@@ -716,8 +728,8 @@ export default function FinancePage() {
                 {data?.budgetList?.map(b => {
                   const spent = b.category === 'Overall' 
                     ? data?.summary?.totalExpense || 0
-                    : data?.entries?.filter(e => e.type === 'expense' && e.category === b.category).reduce((s, e) => s + e.amount, 0) || 0;
-                  const pct = Math.round((spent / (b.amount || 1)) * 100);
+                    : data?.entries?.filter(e => e.type === 'expense' && e.category === b.category).reduce((s, e) => s + (Number(e.amount) || 0), 0) || 0;
+                  const pct = Math.round((spent / (Number(b.amount) || 1)) * 100);
 
                   return (
                     <div key={b.id} className="p-3 bg-white/[0.02] rounded-xl border border-white/5 space-y-1.5">
@@ -790,7 +802,7 @@ export default function FinancePage() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {goals.map(goal => {
-                  const pct = Math.round(((goal.current_amount || 0) / (goal.target_amount || 1)) * 100);
+                  const pct = Math.round(((Number(goal.current_amount) || 0) / (Number(goal.target_amount) || 1)) * 100);
                   return (
                     <div key={goal.id} className="p-3 bg-white/[0.02] rounded-xl border border-white/5 space-y-2">
                       <div className="flex justify-between items-start text-xs">
@@ -863,7 +875,7 @@ export default function FinancePage() {
           <div className="bg-[#121212] rounded-2xl p-4 border border-white/10 shadow-sm space-y-3">
             <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Category Breakdown</span>
             
-            {data?.charts?.categoryBreakdown?.length === 0 ? (
+            {(!data?.charts?.categoryBreakdown || data.charts.categoryBreakdown.length === 0) ? (
               <p className="text-center py-6 text-xs text-gray-500">No expense breakdown data available.</p>
             ) : (
               <div className="h-56 w-full">
