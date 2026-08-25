@@ -1,18 +1,29 @@
 const { Pool } = require('pg');
+
 const sql = new Pool({
   connectionString: process.env.POSTGRES_URL || process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000
 });
+
 const { initializeSchema } = require('./schema');
 
+let isInitialized = false;
 let initPromise = null;
 
 function ensureInitialized() {
+  if (isInitialized) {
+    return Promise.resolve();
+  }
+
   if (!initPromise) {
     initPromise = (async () => {
       try {
         await initializeSchema(sql);
         await seedDefaultUsers(sql);
+        isInitialized = true;
       } catch (err) {
         initPromise = null;
         throw err;
@@ -28,16 +39,12 @@ function getDb() {
 
 async function seedDefaultUsers(db) {
   try {
-    // Forcefully update passwords as requested by the user
     if (process.env.VERCEL) {
-      const hashHafi = '$2b$10$uQyPkAdL0RAumHJ4CBaCoOEmYTes3CLczlZVAG6jFnp9sWvJE4jCu'; // sayanglila
-      const hashLila = '$2b$10$A8CmVXLhOQTmyZMPlEYGz.5vr4Q45AVOqBvEwzI1Cw6FA.Nku54UC'; // password123
-      
-      await db.query(`UPDATE users SET password_hash = $1 WHERE username = 'hafi'`, [hashHafi]);
-      await db.query(`UPDATE users SET password_hash = $1 WHERE username = 'lila'`, [hashLila]);
-
       const { rows } = await db.query('SELECT COUNT(*) as count FROM users');
-      if (parseInt(rows[0].count) === 0) {
+      if (parseInt(rows[0].count, 10) === 0) {
+        const hashHafi = '$2b$10$uQyPkAdL0RAumHJ4CBaCoOEmYTes3CLczlZVAG6jFnp9sWvJE4jCu'; // sayanglila
+        const hashLila = '$2b$10$A8CmVXLhOQTmyZMPlEYGz.5vr4Q45AVOqBvEwzI1Cw6FA.Nku54UC'; // password123
+
         await db.query(`
           INSERT INTO users (username, password_hash, display_name, avatar, bio, theme_preset, accent_color, bg_color)
           VALUES 
@@ -48,8 +55,7 @@ async function seedDefaultUsers(db) {
       }
     }
   } catch (err) {
-    console.error('[Postgres Setup] Failed to auto-seed database:', err.message);
-    throw err;
+    console.error('[Postgres Setup] Seed check note:', err.message);
   }
 }
 

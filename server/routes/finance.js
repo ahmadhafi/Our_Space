@@ -177,16 +177,28 @@ router.get('/',
       }
 
       // Calculate 50/30/20 Breakdown
-      // Needs: Food, Transport, Bills, Rent, Loan Payment, Credit Card, Insurance, Healthcare
-      // Wants: Entertainment, Subscription, Education, Other
-      // Savings: Investment, Savings
       let spentNeeds = 0;
       let spentWants = 0;
       let spentSavings = 0;
       Object.entries(categoryBreakdown).forEach(([cat, amt]) => {
-        if (['Food', 'Transport', 'Bills', 'Rent', 'Loan Payment', 'Credit Card', 'Insurance', 'Healthcare'].includes(cat)) spentNeeds += amt;
-        else if (['Entertainment', 'Subscription', 'Education', 'Other'].includes(cat)) spentWants += amt;
-        else if (['Investment', 'Savings'].includes(cat)) spentSavings += amt;
+        const lower = cat.toLowerCase();
+        if (
+          lower.includes('food') || lower.includes('transport') || lower.includes('bill') || 
+          lower.includes('rent') || lower.includes('loan') || lower.includes('credit') || 
+          lower.includes('insurance') || lower.includes('health') || lower.includes('electric') || 
+          lower.includes('water') || lower.includes('internet') || lower.includes('phone') || 
+          lower.includes('gas') || lower.includes('fuel') || lower.includes('bensin') || 
+          lower.includes('grocery') || lower.includes('groceries') || lower.includes('pharmacy')
+        ) {
+          spentNeeds += amt;
+        } else if (
+          lower.includes('invest') || lower.includes('saving') || lower.includes('stock') || 
+          lower.includes('crypto') || lower.includes('gold') || lower.includes('deposit')
+        ) {
+          spentSavings += amt;
+        } else {
+          spentWants += amt;
+        }
       });
 
       const rule503020 = {
@@ -225,7 +237,7 @@ router.post('/',
   [
     body('amount').isInt({ min: 1 }).withMessage('Amount must be a positive integer'),
     body('type').isIn(['income', 'expense']).withMessage('Type must be income or expense'),
-    body('category').isIn(VALID_CATEGORIES).withMessage(`Category must be one of: ${VALID_CATEGORIES.join(', ')}`),
+    body('category').trim().notEmpty().isLength({ max: 100 }).withMessage('Category is required'),
     body('note').optional().trim().isLength({ max: 500 }).withMessage('Note must be under 500 characters'),
     body('date').isISO8601().withMessage('Date must be a valid date'),
     body('split_type').optional().isIn(VALID_SPLIT_TYPES).withMessage('split_type must be personal or shared')
@@ -323,7 +335,7 @@ router.put('/:id',
     param('id').isInt().toInt(),
     body('amount').isInt({ min: 1 }).withMessage('Amount must be a positive integer'),
     body('type').isIn(['income', 'expense']).withMessage('Type must be income or expense'),
-    body('category').isIn(VALID_CATEGORIES).withMessage(`Category must be one of: ${VALID_CATEGORIES.join(', ')}`),
+    body('category').trim().notEmpty().isLength({ max: 100 }).withMessage('Category is required'),
     body('note').optional().trim().isLength({ max: 500 }).withMessage('Note must be under 500 characters'),
     body('date').isISO8601().withMessage('Date must be a valid date')
   ],
@@ -388,7 +400,7 @@ router.post('/budget',
   [
     body('month').matches(/^\d{4}-\d{2}$/).withMessage('Month must be YYYY-MM format'),
     body('amount').isInt({ min: 0 }).withMessage('Amount must be a positive integer'),
-    body('category').optional().isIn([...VALID_CATEGORIES, 'Overall']).withMessage('Invalid category'),
+    body('category').optional().trim().isLength({ max: 100 }),
     body('type').optional().isIn(VALID_SPLIT_TYPES).withMessage('Type must be personal or shared')
   ],
   async (req, res) => {

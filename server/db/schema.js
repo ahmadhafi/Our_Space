@@ -188,7 +188,9 @@ async function initializeSchema(sql) {
       CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
       CREATE INDEX IF NOT EXISTS idx_messages_receiver ON messages(receiver_id);
       CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at ASC);
-      CREATE INDEX IF NOT EXISTS idx_finance_accounts_user ON finance_accounts(user_id);
+      CREATE INDEX IF NOT EXISTS idx_finance_composite ON finance_entries(date, user_id, split_type);
+      CREATE INDEX IF NOT EXISTS idx_finance_budgets_lookup ON finance_budgets(month, type, user_id);
+      CREATE INDEX IF NOT EXISTS idx_messages_unread ON messages(receiver_id, is_read);
     `);
 
     // Migrations for existing tables

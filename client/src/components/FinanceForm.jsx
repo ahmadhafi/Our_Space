@@ -1,31 +1,58 @@
 import { useState, useEffect } from 'react';
+import CategoryPickerModal, { getCategoryIcon, getCategoryColor } from './CategoryPickerModal';
+import ReceiptScannerModal from './ReceiptScannerModal';
 
-const EXPENSE_CATEGORY_GROUPS = {
-  'Needs (50% Target)': ['Food', 'Transport', 'Bills', 'Rent', 'Insurance', 'Healthcare'],
-  'Debt (50% Target)': ['Loan Payment', 'Credit Card'],
-  'Wants (30% Target)': ['Entertainment', 'Subscription', 'Education', 'Other'],
-  'Savings (20% Target)': ['Investment', 'Savings']
-};
-
-const INCOME_CATEGORIES = ['Salary', 'Bonus', 'Freelance', 'Gift', 'Investment Return', 'Other Income'];
-
-export default function FinanceForm({ onEntryCreated }) {
+export default function FinanceForm({ onEntryCreated, onCancel }) {
+  const [type, setType] = useState('expense'); // 'expense' | 'income' | 'debt'
   const [amount, setAmount] = useState('');
-  const [type, setType] = useState('expense');
   const [category, setCategory] = useState('Food');
   const [note, setNote] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [splitType, setSplitType] = useState('personal');
+  const [splitType, setSplitType] = useState('personal'); // 'personal' | 'shared'
+  const [wallet, setWallet] = useState('Cash');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [showScannerModal, setShowScannerModal] = useState(false);
+
+  // Set default category when switching type
   useEffect(() => {
     if (type === 'income') {
       setCategory('Salary');
+    } else if (type === 'debt') {
+      setCategory('Loan Payment');
     } else {
       setCategory('Food');
     }
   }, [type]);
+
+  // Quick date navigation (Previous Day / Next Day)
+  const adjustDate = (days) => {
+    const current = new Date(date);
+    current.setDate(current.getDate() + days);
+    setDate(current.toISOString().split('T')[0]);
+  };
+
+  // Format date display for header (e.g. Tuesday, 25/08/2026)
+  const formatDisplayDate = (dStr) => {
+    try {
+      const d = new Date(dStr);
+      const options = { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' };
+      return d.toLocaleDateString('en-GB', options);
+    } catch {
+      return dStr;
+    }
+  };
+
+  const handleApplyScan = (scannedData) => {
+    if (scannedData.amount) setAmount(scannedData.amount.toString());
+    if (scannedData.date) setDate(scannedData.date);
+    if (scannedData.category) setCategory(scannedData.category);
+    if (scannedData.note) setNote(scannedData.note);
+    if (scannedData.splitType) setSplitType(scannedData.splitType);
+    setType('expense');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -42,9 +69,13 @@ export default function FinanceForm({ onEntryCreated }) {
 
     try {
       const { apiPost } = await import('../hooks/useApi');
+      
+      // Determine backend type ('income' or 'expense')
+      const backendType = type === 'income' ? 'income' : 'expense';
+
       const data = await apiPost('/api/finance', {
         amount: amountInt,
-        type,
+        type: backendType,
         category,
         note: note.trim(),
         date,
@@ -62,162 +93,271 @@ export default function FinanceForm({ onEntryCreated }) {
     }
   };
 
-  const formatPreview = () => {
-    const num = parseInt(amount, 10);
-    if (isNaN(num)) return 'Rp 0';
-    return `Rp ${num.toLocaleString('id-ID')}`;
-  };
-
   return (
-    <div className="bg-[#1A1A1A] rounded-[2rem] p-5 border border-white/5 animate-fade-in">
-      <h3 className="font-bold mb-4 flex items-center gap-2 text-white">
-        <svg className="w-5 h-5 text-[#FFFC00]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-        </svg>
-        Add Entry
-      </h3>
-
-      <form onSubmit={handleSubmit} className="space-y-3">
-        {/* Type toggle */}
-        <div className="flex rounded-xl overflow-hidden border border-white/10 bg-black">
-          <button
-            type="button"
-            onClick={() => setType('income')}
-            className={`flex-1 py-3 text-sm font-bold transition-all ${
-              type === 'income'
-                ? 'bg-green-500 text-black'
-                : 'text-gray-400 hover:bg-white/5'
-            }`}
-          >
-            💰 Income
-          </button>
-          <button
-            type="button"
-            onClick={() => setType('expense')}
-            className={`flex-1 py-3 text-sm font-bold transition-all ${
-              type === 'expense'
-                ? 'bg-red-500 text-black'
-                : 'text-gray-400 hover:bg-white/5'
-            }`}
-          >
-            💸 Expense
-          </button>
+    <div className="bg-[#141414] rounded-[2.5rem] p-5 sm:p-6 border border-white/10 shadow-2xl relative animate-fade-in text-white">
+      
+      {/* Header */}
+      <div className="flex items-center justify-between pb-4 border-b border-white/10">
+        <div className="flex items-center gap-3">
+          {onCancel && (
+            <button 
+              type="button" 
+              onClick={onCancel}
+              className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white"
+            >
+              ✕
+            </button>
+          )}
+          <h3 className="text-lg font-bold text-white">Add Transaction</h3>
         </div>
 
-        {/* Split Type */}
-        <div className="flex rounded-xl overflow-hidden border border-white/10 bg-black">
-          <button
-            type="button"
-            onClick={() => setSplitType('personal')}
-            className={`flex-1 py-2 text-xs font-bold transition-all ${
-              splitType === 'personal'
-                ? 'bg-blue-500 text-white'
-                : 'text-gray-400 hover:bg-white/5'
-            }`}
-          >
-            👤 Personal
-          </button>
-          <button
-            type="button"
-            onClick={() => setSplitType('shared')}
-            className={`flex-1 py-2 text-xs font-bold transition-all ${
-              splitType === 'shared'
-                ? 'bg-purple-500 text-white'
-                : 'text-gray-400 hover:bg-white/5'
-            }`}
-          >
-            🤝 Shared
-          </button>
+        {/* Green Smart Receipt Scanner Button */}
+        <button
+          type="button"
+          onClick={() => setShowScannerModal(true)}
+          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-green-500 hover:bg-green-600 text-black text-xs font-bold transition-all shadow-md shadow-green-500/20 hover:scale-105 active:scale-95"
+          title="Scan receipt with camera or image"
+        >
+          <span className="text-sm">🧾</span>
+          <span>Scan Receipt</span>
+        </button>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-4 pt-4">
+        
+        {/* Money Lover Style Segmented Switcher: Expense | Income | Debt/Loan */}
+        <div className="flex rounded-2xl p-1 bg-black/60 border border-white/10">
+          {[
+            { id: 'expense', label: 'Expense', color: 'bg-red-500 text-white' },
+            { id: 'income', label: 'Income', color: 'bg-green-500 text-black' },
+            { id: 'debt', label: 'Debt/Loan', color: 'bg-amber-500 text-black' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setType(tab.id)}
+              className={`flex-1 py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-all ${
+                type === tab.id
+                  ? `${tab.color} shadow-lg`
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        {/* Consultant Tip */}
-        {type === 'expense' && splitType === 'shared' && (
-          <p className="text-[10px] text-gray-400 italic bg-white/5 p-2 rounded-lg border border-white/10">
-            <span className="text-[#FFFC00]">💡 Tip:</span> This will be split proportionally based on the "Expense Split Percentage" configured in your Profile Settings.
-          </p>
-        )}
+        {/* Source / Wallet Row */}
+        <div className="flex items-center gap-3 bg-white/5 rounded-2xl p-3 border border-white/5">
+          <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center text-lg">
+            👛
+          </div>
+          <div className="flex-1">
+            <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block">Wallet / Account</span>
+            <select
+              value={wallet}
+              onChange={(e) => setWallet(e.target.value)}
+              className="bg-transparent text-sm font-semibold text-white focus:outline-none w-full cursor-pointer"
+            >
+              <option value="Cash" className="bg-[#1a1a1a] text-white">💵 Cash</option>
+              <option value="Bank BCA" className="bg-[#1a1a1a] text-white">💳 Bank BCA</option>
+              <option value="Bank Mandiri" className="bg-[#1a1a1a] text-white">💳 Bank Mandiri</option>
+              <option value="GoPay / OVO / Dana" className="bg-[#1a1a1a] text-white">📱 E-Wallet (GoPay/OVO/Dana)</option>
+              <option value="Credit Card" className="bg-[#1a1a1a] text-white">💳 Credit Card</option>
+            </select>
+          </div>
+        </div>
 
-        {/* Amount */}
-        <div>
-          <label className="text-xs font-medium text-gray-500 mb-1 block">Amount (IDR)</label>
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">Rp</span>
+        {/* Large Prominent Amount Input with IDR Badge */}
+        <div className="bg-white/5 rounded-2xl p-4 border border-white/5 flex items-center gap-3">
+          <span className="text-xs font-extrabold px-2.5 py-1 rounded-lg bg-white/10 text-gray-300 tracking-wider">
+            IDR
+          </span>
+          <div className="flex-1 relative">
             <input
               type="number"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0"
-              className="input-field pl-10"
+              className={`w-full bg-transparent text-3xl sm:text-4xl font-extrabold focus:outline-none ${
+                type === 'income' ? 'text-green-400' : 'text-white'
+              }`}
               min="1"
               required
             />
           </div>
-          {amount && (
-            <p className="text-xs text-gray-400 mt-1">{formatPreview()}</p>
-          )}
         </div>
 
-        {/* Category */}
-        <div>
-          <label className="text-xs font-medium text-gray-500 mb-1 block">
-            {type === 'income' ? 'Income Source' : 'Category'}
-          </label>
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="input-field"
-          >
-            {type === 'expense' ? (
-              Object.entries(EXPENSE_CATEGORY_GROUPS).map(([groupName, categories]) => (
-                <optgroup key={groupName} label={groupName} className="bg-[#1A1A1A] text-gray-400 font-bold">
-                  {categories.map(cat => (
-                    <option key={cat} value={cat} className="text-white font-normal">{cat}</option>
-                  ))}
-                </optgroup>
-              ))
-            ) : (
-              INCOME_CATEGORIES.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))
-            )}
-          </select>
-        </div>
-
-        {/* Date */}
-        <div>
-          <label className="text-xs font-medium text-gray-500 mb-1 block">Date</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="input-field"
-            required
-          />
-        </div>
-
-        {/* Note */}
-        <div>
-          <label className="text-xs font-medium text-gray-500 mb-1 block">Note (optional)</label>
-          <input
-            type="text"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="What was this for?"
-            className="input-field"
-            maxLength={500}
-          />
-        </div>
-
-        {error && <p className="text-sm text-red-500">{error}</p>}
-
-        <button
-          type="submit"
-          disabled={!amount || loading}
-          className="btn-primary w-full disabled:opacity-50"
+        {/* Select Category Row (Click opens Modal) */}
+        <div 
+          onClick={() => setShowCategoryPicker(true)}
+          className="flex items-center justify-between bg-white/5 hover:bg-white/10 rounded-2xl p-3.5 border border-white/5 cursor-pointer transition-all active:scale-[0.99]"
         >
-          {loading ? 'Adding...' : `Add ${type === 'income' ? 'Income' : 'Expense'}`}
-        </button>
+          <div className="flex items-center gap-3.5">
+            <div 
+              className="w-10 h-10 rounded-full flex items-center justify-center text-xl bg-black/40 border border-white/10"
+              style={{ borderColor: `${getCategoryColor(category)}60` }}
+            >
+              {getCategoryIcon(category)}
+            </div>
+            <div>
+              <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block">Category</span>
+              <span className="text-sm font-semibold text-white">{category}</span>
+            </div>
+          </div>
+          <span className="text-gray-400 text-xs font-semibold px-2 py-1 bg-white/5 rounded-lg">Change ›</span>
+        </div>
+
+        {/* Write Note Row */}
+        <div className="flex items-center gap-3 bg-white/5 rounded-2xl p-3.5 border border-white/5">
+          <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center text-lg text-gray-300">
+            ✍️
+          </div>
+          <div className="flex-1">
+            <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block">Note / Description</span>
+            <input
+              type="text"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Write a note (optional)..."
+              className="w-full bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none"
+              maxLength={250}
+            />
+          </div>
+        </div>
+
+        {/* Date Selector with < Previous Day / Next Day > Arrows */}
+        <div className="flex items-center justify-between bg-white/5 rounded-2xl p-3 border border-white/5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center text-lg">
+              📅
+            </div>
+            <div>
+              <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block">Date</span>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="bg-transparent text-xs sm:text-sm font-semibold text-white focus:outline-none cursor-pointer"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1 bg-black/40 rounded-xl p-1 border border-white/5">
+            <button
+              type="button"
+              onClick={() => adjustDate(-1)}
+              className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center text-gray-300 text-sm font-bold"
+              title="Previous Day"
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              onClick={() => setDate(new Date().toISOString().split('T')[0])}
+              className="px-2 py-1 text-[10px] font-bold text-green-400 hover:bg-white/10 rounded-md"
+            >
+              Today
+            </button>
+            <button
+              type="button"
+              onClick={() => adjustDate(1)}
+              className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center text-gray-300 text-sm font-bold"
+              title="Next Day"
+            >
+              ›
+            </button>
+          </div>
+        </div>
+
+        {/* "With" / Split Type Row */}
+        <div className="flex items-center justify-between bg-white/5 rounded-2xl p-3.5 border border-white/5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center text-lg">
+              👥
+            </div>
+            <div>
+              <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block">Account Type</span>
+              <span className="text-xs font-semibold text-white">
+                {splitType === 'shared' ? '🤝 Shared with Partner (Split Expense)' : '👤 Personal Expense'}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex rounded-xl p-1 bg-black/60 border border-white/10">
+            <button
+              type="button"
+              onClick={() => setSplitType('personal')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                splitType === 'personal'
+                  ? 'bg-blue-500 text-white shadow'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Personal
+            </button>
+            <button
+              type="button"
+              onClick={() => setSplitType('shared')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                splitType === 'shared'
+                  ? 'bg-purple-500 text-white shadow'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Shared
+            </button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="p-3 rounded-xl bg-red-500/20 border border-red-500/30 text-xs text-red-300">
+            {error}
+          </div>
+        )}
+
+        {/* Save Button */}
+        <div className="pt-2">
+          <button
+            type="submit"
+            disabled={!amount || loading}
+            className="w-full py-3.5 rounded-2xl bg-green-500 hover:bg-green-600 disabled:opacity-50 text-black font-extrabold text-base transition-all shadow-lg shadow-green-500/20 active:scale-[0.99] flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <span>Saving...</span>
+            ) : (
+              <>
+                <span>Save Transaction</span>
+                <span>✓</span>
+              </>
+            )}
+          </button>
+        </div>
+
       </form>
+
+      {/* Category Picker Modal */}
+      {showCategoryPicker && (
+        <CategoryPickerModal
+          currentTab={type}
+          selectedCategory={category}
+          onSelect={(cat, detectedType) => {
+            setCategory(cat);
+            if (detectedType && detectedType !== type && type !== 'debt') {
+              setType(detectedType);
+            }
+          }}
+          onClose={() => setShowCategoryPicker(false)}
+        />
+      )}
+
+      {/* Smart Receipt Scanner Modal */}
+      <ReceiptScannerModal
+        isOpen={showScannerModal}
+        onClose={() => setShowScannerModal(false)}
+        onApply={handleApplyScan}
+      />
+
     </div>
   );
 }

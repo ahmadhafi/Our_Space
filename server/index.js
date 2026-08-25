@@ -7,6 +7,7 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
 const express = require('express');
+const compression = require('compression');
 const helmet = require('helmet');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
@@ -15,7 +16,8 @@ const { getDb, ensureInitialized } = require('./db/connection');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// ── Security ──
+// ── Compression & Security ──
+app.use(compression());
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   contentSecurityPolicy: false
@@ -72,7 +74,15 @@ app.get('/api/health', (req, res) => {
 
 // ── Serve Client Build (production) ──
 const clientBuildPath = path.resolve(__dirname, '..', 'client', 'dist');
-app.use(express.static(clientBuildPath));
+app.use(express.static(clientBuildPath, {
+  maxAge: '1y',
+  immutable: true,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  }
+}));
 
 // ── 404 Handler ──
 app.use('/api/*', (req, res) => {
