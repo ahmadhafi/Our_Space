@@ -1,20 +1,28 @@
 const { Pool } = require('pg');
 
-const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL || process.env.POSTGRES_PRISMA_URL;
 
-const sql = new Pool(
-  connectionString
-    ? {
-        connectionString,
-        ssl: { rejectUnauthorized: false },
-        max: 10,
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 10000
-      }
-    : {
-        ssl: { rejectUnauthorized: false }
-      }
-);
+const isLocalhost = connectionString && (connectionString.includes('localhost') || connectionString.includes('127.0.0.1'));
+const isCloud = connectionString && !isLocalhost;
+
+const poolConfig = connectionString
+  ? {
+      connectionString,
+      ssl: isCloud ? { rejectUnauthorized: false } : false,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000
+    }
+  : {
+      user: process.env.PGUSER || 'postgres',
+      host: process.env.PGHOST || 'localhost',
+      database: process.env.PGDATABASE || 'ourspace',
+      password: process.env.PGPASSWORD || 'postgres',
+      port: parseInt(process.env.PGPORT || '5432', 10),
+      ssl: false
+    };
+
+const sql = new Pool(poolConfig);
 
 const { initializeSchema } = require('./schema');
 

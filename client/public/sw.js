@@ -1,34 +1,27 @@
-// Service Worker for Ours PWA
-const CACHE_NAME = 'ours-cache-v1';
-const STATIC_ASSETS = [
-  '/',
-  '/app-icon.jpg',
-  '/manifest.json'
-];
+// Service Worker for Our Space PWA
+const CACHE_NAME = 'ourspace-cache-v3';
 
-// Install: cache static shell
+// Install: activate immediately
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
-    })
-  );
   self.skipWaiting();
 });
 
-// Activate: clean old caches
+// Activate: delete ALL old caches immediately to ensure users get the latest code
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
-        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+        keys.map((key) => {
+          if (key !== CACHE_NAME) {
+            return caches.delete(key);
+          }
+        })
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-// Fetch: network-first for API, cache-first for static assets
+// Fetch handler
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
@@ -36,65 +29,75 @@ self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (request.method !== 'GET') return;
 
-  // API calls: network-first
+  // 1. API calls: Always bypass cache, network only
   if (url.pathname.startsWith('/api/')) {
+    return;
+  }
+
+  // 2. HTML navigation: Network-first, fallback to cache only if completely offline
+  if (request.mode === 'navigate' || request.headers.get('accept')?.includes('text/html')) {
     event.respondWith(
       fetch(request)
-        .catch(() => caches.match(request))
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request) || caches.match('/'))
     );
     return;
   }
 
-  // Static assets: cache-first, fallback to network
+  // 3. Static assets with hashes (.js, .css, images): Network-first with cache fallback
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
-        // Cache successful responses for static assets
-        if (response.ok && (url.pathname.match(/\.(js|css|jpg|jpeg|png|svg|woff2?)$/) || url.pathname === '/')) {
+    fetch(request)
+      .then((response) => {
+        if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
         }
         return response;
-      });
-    })
+      })
+      .catch(() => caches.match(request))
   );
 });
 
 // Push Notifications
 self.addEventListener('push', (event) => {
   if (event.data) {
-    const data = event.data.json();
-    const options = {
-      body: data.body,
-      icon: data.icon || '/app-icon.jpg',
-      badge: '/app-icon.jpg',
-      data: {
-        url: data.url || '/'
-      }
-    };
-    event.waitUntil(
-      self.registration.showNotification(data.title, options)
-    );
+    try {
+      const data = event.data.json();
+      const options = {
+        body: data.body || 'New update in Our Space',
+        icon: data.icon || '/app-icon.jpg',
+        badge: '/app-icon.jpg',
+        data: {
+          url: data.url || '/'
+        }
+      };
+      event.waitUntil(
+        self.registration.showNotification(data.title || 'Our Space', options)
+      );
+    } catch (e) {
+      console.warn('Push parse error:', e);
+    }
   }
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const urlToOpen = event.notification.data.url;
+  const urlToOpen = event.notification.data?.url || '/';
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      let matchingClient = null;
       for (let i = 0; i < windowClients.length; i++) {
-        const windowClient = windowClients[i];
-        if (windowClient.url === urlToOpen) {
-          matchingClient = windowClient;
-          break;
+        const client = windowClients[i];
+        if (client.url === urlToOpen && 'focus' in client) {
+          return client.focus();
         }
       }
-      if (matchingClient) {
-        return matchingClient.focus();
-      } else {
+      if (clients.openWindow) {
         return clients.openWindow(urlToOpen);
       }
     })
