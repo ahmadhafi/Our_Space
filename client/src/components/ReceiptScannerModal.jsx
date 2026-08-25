@@ -243,12 +243,20 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
 
                     <div>
                       <label className="text-[11px] font-medium text-gray-400 block mb-1">Category</label>
-                      <input
-                        type="text"
-                        value={scanResult.category}
+                      <select
+                        value={scanResult.category || 'Food'}
                         onChange={(e) => setScanResult({ ...scanResult, category: e.target.value })}
                         className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
-                      />
+                      >
+                        <option value="Food">🍱 Food</option>
+                        <option value="Transport">🚗 Transport</option>
+                        <option value="Bills">🧾 Bills / Laundry</option>
+                        <option value="Healthcare">💊 Healthcare</option>
+                        <option value="Entertainment">🎮 Entertainment</option>
+                        <option value="Rent">🏠 Rent</option>
+                        <option value="Education">📚 Education</option>
+                        <option value="Other">🛍️ Other</option>
+                      </select>
                     </div>
                   </div>
 
