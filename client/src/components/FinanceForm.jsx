@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import CategoryPickerModal, { getCategoryColor } from './CategoryPickerModal';
+import CategoryPickerModal, { getCategoryColor, getCategoryIcon } from './CategoryPickerModal';
 import ReceiptScannerModal from './ReceiptScannerModal';
+import { apiPost } from '../hooks/useApi';
 
 export default function FinanceForm({ onEntryCreated, onCancel, defaultSplitType = 'personal' }) {
   const [type, setType] = useState('expense'); // 'expense' | 'income' | 'debt'
@@ -9,7 +10,6 @@ export default function FinanceForm({ onEntryCreated, onCancel, defaultSplitType
   const [note, setNote] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [splitType, setSplitType] = useState(defaultSplitType || 'personal'); // 'personal' | 'shared'
-  const [wallet, setWallet] = useState('Cash');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -46,14 +46,13 @@ export default function FinanceForm({ onEntryCreated, onCancel, defaultSplitType
     setError('');
 
     try {
-      const { apiPost } = await import('../hooks/useApi');
       const backendType = type === 'income' ? 'income' : 'expense';
 
       const data = await apiPost('/api/finance', {
         amount: amountInt,
         type: backendType,
         category,
-        note: note.trim(),
+        note: (note || '').trim(),
         date,
         split_type: splitType
       });
@@ -62,7 +61,8 @@ export default function FinanceForm({ onEntryCreated, onCancel, defaultSplitType
       setNote('');
       if (onEntryCreated) onEntryCreated(data.entry);
     } catch (err) {
-      setError(err.message);
+      console.error('Save finance error:', err);
+      setError(err.message || 'Failed to save transaction');
     } finally {
       setLoading(false);
     }
@@ -92,7 +92,7 @@ export default function FinanceForm({ onEntryCreated, onCancel, defaultSplitType
           onClick={() => setShowScannerModal(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-medium transition-colors"
         >
-          <span>Scan Receipt</span>
+          <span>📷 Scan Receipt</span>
         </button>
       </div>
 
@@ -144,10 +144,7 @@ export default function FinanceForm({ onEntryCreated, onCancel, defaultSplitType
           <div>
             <span className="text-[10px] uppercase font-semibold text-gray-500 block">Category</span>
             <div className="flex items-center gap-2 mt-0.5">
-              <span 
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: getCategoryColor(category) }}
-              />
+              <span className="text-base">{getCategoryIcon(category)}</span>
               <span className="text-xs font-medium text-white">{category}</span>
             </div>
           </div>

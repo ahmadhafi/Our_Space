@@ -4,107 +4,172 @@ export const CATEGORIES_CONFIG = {
   expense: [
     {
       group: 'Bills & Utilities',
+      icon: '💡',
       color: '#ef4444',
       items: [
-        'Bills', 'Electricity Bill', 'Water Bill', 'Internet Bill', 
-        'Phone Bill', 'Rent', 'Gas Bill', 'Television Bill'
+        { name: 'Bills', icon: '🧾' },
+        { name: 'Electricity Bill', icon: '⚡' },
+        { name: 'Water Bill', icon: '💧' },
+        { name: 'Internet Bill', icon: '📶' },
+        { name: 'Phone Bill', icon: '📱' },
+        { name: 'Rent', icon: '🏠' },
+        { name: 'Gas Bill', icon: '🔥' },
+        { name: 'Television Bill', icon: '📺' }
       ]
     },
     {
       group: 'Food & Beverage',
+      icon: '🍱',
       color: '#f97316',
       items: [
-        'Food', 'Cafe & Coffee', 'Restaurant', 'Groceries', 'Snacks & Dessert'
+        { name: 'Food', icon: '🍱' },
+        { name: 'Cafe & Coffee', icon: '☕' },
+        { name: 'Restaurant', icon: '🍽️' },
+        { name: 'Groceries', icon: '🛒' },
+        { name: 'Snacks & Dessert', icon: '🍰' }
       ]
     },
     {
       group: 'Transportation',
+      icon: '🚗',
       color: '#3b82f6',
       items: [
-        'Transport', 'Fuel & Bensin', 'Vehicle Maintenance', 'Parking & Toll', 'Taxi & Ride'
+        { name: 'Transport', icon: '🚌' },
+        { name: 'Fuel & Bensin', icon: '⛽' },
+        { name: 'Vehicle Maintenance', icon: '🔧' },
+        { name: 'Parking & Toll', icon: '🅿️' },
+        { name: 'Taxi & Ride', icon: '🚕' }
       ]
     },
     {
       group: 'Shopping & Living',
+      icon: '🛍️',
       color: '#ec4899',
       items: [
-        'Shopping', 'Personal Items', 'Makeup & Skincare', 'Houseware', 'Electronics'
+        { name: 'Shopping', icon: '🛍️' },
+        { name: 'Personal Items', icon: '🧴' },
+        { name: 'Makeup & Skincare', icon: '💄' },
+        { name: 'Houseware', icon: '🛋️' },
+        { name: 'Electronics', icon: '💻' }
       ]
     },
     {
       group: 'Entertainment',
+      icon: '🎮',
       color: '#a855f7',
       items: [
-        'Entertainment', 'Fun Money', 'Streaming Service', 'Games'
+        { name: 'Entertainment', icon: '🎉' },
+        { name: 'Fun Money', icon: '🎡' },
+        { name: 'Streaming Service', icon: '🎬' },
+        { name: 'Games', icon: '🕹️' }
       ]
     },
     {
       group: 'Health & Fitness',
+      icon: '🏥',
       color: '#fb7185',
       items: [
-        'Healthcare', 'Fitness & Gym', 'Medical Check-up', 'Pharmacy'
+        { name: 'Healthcare', icon: '💊' },
+        { name: 'Fitness & Gym', icon: '🏋️' },
+        { name: 'Medical Check-up', icon: '🩺' },
+        { name: 'Pharmacy', icon: '🩹' }
       ]
     },
     {
       group: 'Family & Home',
+      icon: '🏡',
       color: '#10b981',
       items: [
-        'Home Maintenance', 'Pets', 'Home Services'
+        { name: 'Home Maintenance', icon: '🔨' },
+        { name: 'Pets', icon: '🐾' },
+        { name: 'Home Services', icon: '🧹' }
       ]
     },
     {
       group: 'Education',
+      icon: '🎓',
       color: '#fbbf24',
       items: [
-        'Education', 'Courses & Lessons', 'Books'
+        { name: 'Education', icon: '📚' },
+        { name: 'Courses & Lessons', icon: '💻' },
+        { name: 'Books', icon: '📖' }
       ]
     },
     {
       group: 'Investment & Insurance',
+      icon: '📈',
       color: '#14b8a6',
       items: [
-        'Investment', 'Insurance', 'Savings'
+        { name: 'Investment', icon: '📊' },
+        { name: 'Insurance', icon: '🛡️' },
+        { name: 'Savings', icon: '💰' }
       ]
     },
     {
       group: 'Other',
+      icon: '📦',
       color: '#6b7280',
       items: [
-        'Other', 'Gifts & Donations', 'Outgoing Transfer'
+        { name: 'Other', icon: '📦' },
+        { name: 'Gifts & Donations', icon: '🎁' },
+        { name: 'Outgoing Transfer', icon: '📤' }
       ]
     }
   ],
   income: [
     {
       group: 'Income Streams',
+      icon: '💵',
       color: '#22c55e',
       items: [
-        'Salary', 'Bonus', 'Freelance', 'Incoming Transfer', 
-        'Investment Return', 'Collect Interest', 'Gift', 'Other Income'
+        { name: 'Salary', icon: '💵' },
+        { name: 'Bonus', icon: '🎯' },
+        { name: 'Freelance', icon: '💻' },
+        { name: 'Incoming Transfer', icon: '📥' },
+        { name: 'Investment Return', icon: '📈' },
+        { name: 'Collect Interest', icon: '🪙' },
+        { name: 'Gift', icon: '🎁' },
+        { name: 'Other Income', icon: '💰' }
       ]
     }
   ],
   debt: [
     {
       group: 'Debt & Loan Management',
+      icon: '🤝',
       color: '#f59e0b',
       items: [
-        'Loan Payment', 'Credit Card', 'Debt', 'Debt Collection', 'Loan', 'Repayment'
+        { name: 'Loan Payment', icon: '💸' },
+        { name: 'Credit Card', icon: '💳' },
+        { name: 'Debt', icon: '📉' },
+        { name: 'Debt Collection', icon: '🤝' },
+        { name: 'Loan', icon: '🏦' },
+        { name: 'Repayment', icon: '🔄' }
       ]
     }
   ]
 };
 
 export const ALL_CATEGORY_LIST = [
-  ...CATEGORIES_CONFIG.expense.flatMap(g => g.items),
-  ...CATEGORIES_CONFIG.income.flatMap(g => g.items),
-  ...CATEGORIES_CONFIG.debt.flatMap(g => g.items)
+  ...CATEGORIES_CONFIG.expense.flatMap(g => g.items.map(i => i.name)),
+  ...CATEGORIES_CONFIG.income.flatMap(g => g.items.map(i => i.name)),
+  ...CATEGORIES_CONFIG.debt.flatMap(g => g.items.map(i => i.name))
 ];
+
+export function getCategoryIcon(categoryName) {
+  for (const tab of ['expense', 'income', 'debt']) {
+    for (const group of CATEGORIES_CONFIG[tab]) {
+      const found = group.items.find(i => i.name.toLowerCase() === (categoryName || '').toLowerCase());
+      if (found) return found.icon;
+    }
+  }
+  return '💳';
+}
 
 export function getCategoryColor(categoryName) {
   for (const tab of ['expense', 'income', 'debt']) {
     for (const group of CATEGORIES_CONFIG[tab]) {
-      const found = group.items.find(name => name.toLowerCase() === (categoryName || '').toLowerCase());
+      const found = group.items.find(i => i.name.toLowerCase() === (categoryName || '').toLowerCase());
       if (found) return group.color;
     }
   }
@@ -118,8 +183,8 @@ export default function CategoryPickerModal({ currentTab = 'expense', selectedCa
   const currentGroups = CATEGORIES_CONFIG[activeTab] || CATEGORIES_CONFIG.expense;
 
   const filteredGroups = currentGroups.map(group => {
-    const items = group.items.filter(itemName => 
-      itemName.toLowerCase().includes(search.toLowerCase()) || 
+    const items = group.items.filter(item => 
+      item.name.toLowerCase().includes(search.toLowerCase()) || 
       group.group.toLowerCase().includes(search.toLowerCase())
     );
     return { ...group, items };
@@ -181,17 +246,18 @@ export default function CategoryPickerModal({ currentTab = 'expense', selectedCa
           ) : (
             filteredGroups.map(group => (
               <div key={group.group} className="space-y-1">
-                <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-2">
-                  {group.group}
+                <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-2 flex items-center gap-1.5">
+                  <span>{group.icon}</span>
+                  <span>{group.group}</span>
                 </div>
                 <div className="bg-white/[0.02] rounded-xl border border-white/5 divide-y divide-white/5 overflow-hidden">
-                  {group.items.map(itemName => {
-                    const isSelected = (selectedCategory || '').toLowerCase() === itemName.toLowerCase();
+                  {group.items.map(item => {
+                    const isSelected = (selectedCategory || '').toLowerCase() === item.name.toLowerCase();
                     return (
                       <button
-                        key={itemName}
+                        key={item.name}
                         onClick={() => {
-                          onSelect(itemName, activeTab === 'income' ? 'income' : 'expense', activeTab);
+                          onSelect(item.name, activeTab === 'income' ? 'income' : 'expense', activeTab);
                           onClose();
                         }}
                         className={`w-full flex items-center justify-between px-3.5 py-2.5 transition-all text-xs ${
@@ -201,11 +267,8 @@ export default function CategoryPickerModal({ currentTab = 'expense', selectedCa
                         }`}
                       >
                         <div className="flex items-center gap-2.5">
-                          <span 
-                            className="w-2 h-2 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: group.color }}
-                          />
-                          <span>{itemName}</span>
+                          <span className="text-base">{item.icon}</span>
+                          <span>{item.name}</span>
                         </div>
                         {isSelected && <span className="text-xs text-white font-bold">✓</span>}
                       </button>

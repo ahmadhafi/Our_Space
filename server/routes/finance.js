@@ -761,7 +761,7 @@ router.delete('/goals/:id',
 
 // GET /api/finance/trends?view=shared
 router.get('/trends',
-  [query('view').optional().isIn(['personal', 'shared'])],
+  [query('view').optional().isIn(['personal', 'shared', 'all'])],
   async (req, res) => {
     try {
       const db = getDb();
@@ -781,7 +781,12 @@ router.get('/trends',
       let queryParams = [startDate];
       
       if (view === 'personal') {
-        queryStr += ' AND user_id = $2';
+        queryStr += ' AND (split_type = \'personal\' OR user_id = $2)';
+        queryParams.push(req.user.id);
+      } else if (view === 'shared') {
+        queryStr += ' AND split_type = \'shared\'';
+      } else if (view === 'all') {
+        queryStr += ' AND (split_type = \'shared\' OR user_id = $2 OR split_type IS NULL)';
         queryParams.push(req.user.id);
       }
 
@@ -790,7 +795,7 @@ router.get('/trends',
       const trendData = months.map(m => ({ month: m, income: 0, expense: 0 }));
 
       rows.forEach(row => {
-        const rowMonth = row.date.substring(0, 7); // YYYY-MM
+        const rowMonth = (row.date || '').substring(0, 7); // YYYY-MM
         const monthIndex = months.indexOf(rowMonth);
         if (monthIndex !== -1) {
           if (row.type === 'income') {
@@ -801,7 +806,7 @@ router.get('/trends',
         }
       });
 
-      res.json(trendData);
+      res.json({ trends: trendData });
     } catch (err) {
       console.error('Fetch trends error:', err);
       res.status(500).json({ error: 'Internal server error' });

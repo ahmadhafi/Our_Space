@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiPost, apiPut, apiDelete } from '../hooks/useApi';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import FinanceForm from '../components/FinanceForm';
-import { getCategoryColor } from '../components/CategoryPickerModal';
+import { getCategoryColor, getCategoryIcon } from '../components/CategoryPickerModal';
 import ReceiptScannerModal from '../components/ReceiptScannerModal';
 import { useAuth } from '../hooks/useAuth';
 
@@ -13,7 +13,7 @@ const formatRp = (amount) => {
 export default function FinancePage() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
-  const [view, setView] = useState('personal'); // 'personal' | 'shared'
+  const [view, setView] = useState('all'); // 'personal' | 'shared' | 'all'
   const [activeTab, setActiveTab] = useState('transactions'); // 'transactions' | 'planning' | 'reports'
   
   const [hideBalance, setHideBalance] = useState(false);
@@ -49,13 +49,26 @@ export default function FinancePage() {
   const fetchData = useCallback(async () => {
     try {
       const [financeRes, goalsRes, trendsRes] = await Promise.all([
-        apiGet(`/api/finance?month=${month}&view=${view}`),
-        apiGet(`/api/finance/goals?view=${view}`),
-        apiGet(`/api/finance/trends?view=${view}`)
+        apiGet(`/api/finance?month=${month}&view=${view}`).catch(e => {
+          console.error('finance error:', e);
+          return null;
+        }),
+        apiGet(`/api/finance/goals?view=${view}`).catch(e => {
+          console.error('goals error:', e);
+          return { goals: [] };
+        }),
+        apiGet(`/api/finance/trends?view=${view}`).catch(e => {
+          console.error('trends error:', e);
+          return { trends: [] };
+        })
       ]);
-      setData(financeRes);
-      setGoals(goalsRes.goals || []);
-      setTrendData(trendsRes);
+
+      if (financeRes) {
+        setData(financeRes);
+      }
+      setGoals(goalsRes?.goals || []);
+      const trends = Array.isArray(trendsRes) ? { trends: trendsRes } : (trendsRes || { trends: [] });
+      setTrendData(trends);
     } catch (err) {
       console.error('Failed to fetch finance data:', err);
     }
@@ -115,7 +128,7 @@ export default function FinancePage() {
     e.preventDefault();
     if (!budgetInput) return;
     try {
-      await apiPost('/api/finance/budget', { month, amount: parseInt(budgetInput, 10), category: budgetCategory, type: view });
+      await apiPost('/api/finance/budget', { month, amount: parseInt(budgetInput, 10), category: budgetCategory, type: view === 'all' ? 'shared' : view });
       setShowBudgetForm(false);
       setBudgetInput('');
       fetchData();
@@ -138,7 +151,7 @@ export default function FinancePage() {
     e.preventDefault();
     if (!goalInput.title || !goalInput.target_amount) return;
     try {
-      await apiPost('/api/finance/goals', { ...goalInput, target_amount: parseInt(goalInput.target_amount, 10), type: view });
+      await apiPost('/api/finance/goals', { ...goalInput, target_amount: parseInt(goalInput.target_amount, 10), type: view === 'all' ? 'shared' : view });
       setShowGoalForm(false);
       setGoalInput({ title: '', target_amount: '' });
       fetchData();
@@ -289,9 +302,9 @@ export default function FinancePage() {
           <button
             type="button"
             onClick={() => setShowScannerModal(true)}
-            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-medium transition-colors"
+            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-medium transition-colors flex items-center gap-1.5"
           >
-            Scan Receipt
+            <span>📷 Scan Receipt</span>
           </button>
 
           <button
@@ -466,10 +479,7 @@ export default function FinancePage() {
                   <div key={item.category} className="space-y-1">
                     <div className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2">
-                        <span 
-                          className="w-2 h-2 rounded-full"
-                          style={{ backgroundColor: getCategoryColor(item.category) }}
-                        />
+                        <span className="text-sm">{getCategoryIcon(item.category)}</span>
                         <span className="text-gray-200 font-medium">{item.category}</span>
                       </div>
                       <div className="flex items-center gap-2 text-xs">
@@ -537,12 +547,14 @@ export default function FinancePage() {
                     key={entry.id}
                     className="py-2.5 flex items-center justify-between hover:bg-white/[0.02] px-1.5 rounded-lg transition-colors group"
                   >
-                    {/* Left: Category dot, Title & Date */}
-                    <div className="flex items-center gap-2.5">
-                      <span 
-                        className="w-2 h-2 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: getCategoryColor(entry.category) }}
-                      />
+                    {/* Left: Category icon, Title & Date */}
+                    <div className="flex items-center gap-3">
+                      <div 
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-sm bg-white/5 border border-white/10"
+                        style={{ borderColor: `${getCategoryColor(entry.category)}40` }}
+                      >
+                        {getCategoryIcon(entry.category)}
+                      </div>
                       <div>
                         <div className="flex items-center gap-1.5">
                           <span className="font-medium text-xs text-white">{entry.category}</span>
@@ -710,7 +722,10 @@ export default function FinancePage() {
                   return (
                     <div key={b.id} className="p-3 bg-white/[0.02] rounded-xl border border-white/5 space-y-1.5">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-medium text-white">{b.category}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span>{getCategoryIcon(b.category)}</span>
+                          <span className="font-medium text-white">{b.category}</span>
+                        </div>
                         <div className="flex items-center gap-2 text-xs">
                           <span className="text-gray-400">{displayAmount(spent)} / {displayAmount(b.amount)}</span>
                           <button onClick={() => handleDeleteBudget(b.id)} className="text-red-400 hover:text-red-300">
@@ -879,7 +894,7 @@ export default function FinancePage() {
           </div>
 
           {/* Monthly Trend */}
-          {trendData?.trends && (
+          {trendData?.trends && trendData.trends.length > 0 && (
             <div className="bg-[#121212] rounded-2xl p-4 border border-white/10 shadow-sm space-y-3">
               <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Income vs Expense Trend</span>
               
