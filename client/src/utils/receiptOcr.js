@@ -92,16 +92,30 @@ export async function scanReceiptImage(imageSource, onProgress = () => {}) {
     onProgress({ status: 'Loading recognition model...', progress: 30 });
     const { createWorker } = await import('tesseract.js');
     
-    const worker = await createWorker('ind+eng', 1, {
-      logger: (m) => {
-        if (m.status === 'recognizing text') {
-          onProgress({ 
-            status: 'Reading receipt details & amounts...', 
-            progress: 35 + Math.round((m.progress || 0) * 55) 
-          });
+    let worker;
+    try {
+      worker = await createWorker('ind+eng', 1, {
+        logger: (m) => {
+          if (m.status === 'recognizing text') {
+            onProgress({ 
+              status: 'Reading receipt details & amounts...', 
+              progress: 35 + Math.round((m.progress || 0) * 55) 
+            });
+          }
         }
-      }
-    });
+      });
+    } catch {
+      worker = await createWorker('eng', 1, {
+        logger: (m) => {
+          if (m.status === 'recognizing text') {
+            onProgress({ 
+              status: 'Reading receipt details & amounts...', 
+              progress: 35 + Math.round((m.progress || 0) * 55) 
+            });
+          }
+        }
+      });
+    }
 
     onProgress({ status: 'Extracting fields...', progress: 60 });
     const ret = await worker.recognize(processedImage);
@@ -109,7 +123,7 @@ export async function scanReceiptImage(imageSource, onProgress = () => {}) {
     onProgress({ status: 'Finalizing parsing...', progress: 95 });
     await worker.terminate();
 
-    const rawText = ret.data.text || '';
+    const rawText = ret?.data?.text || '';
     const parsedData = parseReceiptText(rawText);
 
     onProgress({ status: 'Done!', progress: 100 });
@@ -119,7 +133,7 @@ export async function scanReceiptImage(imageSource, onProgress = () => {}) {
     };
   } catch (error) {
     console.error('Receipt OCR failed:', error);
-    throw new Error(error.message || 'Failed to scan receipt image');
+    throw new Error(error.message || 'Failed to scan receipt image. You can still input manually.');
   }
 }
 
