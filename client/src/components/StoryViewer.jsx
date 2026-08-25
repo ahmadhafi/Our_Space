@@ -131,7 +131,8 @@ export default function StoryViewer({ user, onClose, onStoryDeleted }) {
     setPaused(true);
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (e) => {
+    if (e.target.closest('input') || e.target.closest('button')) return;
     // Resume only if we are not currently typing
     if (document.activeElement.tagName !== 'INPUT') {
       setPaused(false);
@@ -175,9 +176,22 @@ export default function StoryViewer({ user, onClose, onStoryDeleted }) {
               </div>
             )}
           </div>
-          <span className="text-white font-semibold text-sm shadow-sm drop-shadow-md">{user.display_name || user.username}</span>
+          <div className="flex flex-col drop-shadow-md">
+            <span className="text-white font-semibold text-sm">{user.display_name || user.username}</span>
+            <span className="text-white/80 text-xs">
+              {new Date(currentStory.created_at).toLocaleString(undefined, { 
+                month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' 
+              })}
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-2 pointer-events-auto">
+          <button 
+            onClick={(e) => { e.stopPropagation(); setPaused(!paused); }} 
+            className="text-white p-2 text-xl drop-shadow-md hover:text-gray-300 transition-colors"
+          >
+            {paused ? '▶' : '⏸'}
+          </button>
           {isOwnStory && (
             <button onClick={handleDelete} className="text-white p-2 text-xl drop-shadow-md hover:text-red-500 transition-colors">
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
