@@ -1,19 +1,27 @@
 const { Pool } = require('pg');
 
-const sql = new Pool({
-  connectionString: process.env.POSTGRES_URL || process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000
-});
+const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+
+const sql = new Pool(
+  connectionString
+    ? {
+        connectionString,
+        ssl: { rejectUnauthorized: false },
+        max: 10,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000
+      }
+    : {
+        ssl: { rejectUnauthorized: false }
+      }
+);
 
 const { initializeSchema } = require('./schema');
 
 let isInitialized = false;
 let initPromise = null;
 
-function ensureInitialized() {
+async function ensureInitialized() {
   if (isInitialized) {
     return Promise.resolve();
   }
@@ -26,6 +34,7 @@ function ensureInitialized() {
         isInitialized = true;
       } catch (err) {
         initPromise = null;
+        console.error('[Postgres] ensureInitialized error:', err.message);
         throw err;
       }
     })();
