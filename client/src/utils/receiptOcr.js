@@ -1,22 +1,19 @@
 /**
  * Smart Receipt & Handwriting OCR Engine
- * Includes safe adaptive canvas pre-processing and Indonesian/English receipt heuristics.
+ * Optimized for mobile, fast startup, and Indonesian receipt formats.
  */
 
 /**
- * Safely pre-processes an image on a canvas to enhance handwriting & contrast.
- * Guaranteed to resolve within timeout and never throw or block.
+ * Safely pre-processes an image on canvas to enhance contrast for both printed and handwritten text.
  */
 async function preprocessReceiptImage(imageSource) {
   return new Promise((resolve) => {
-    // Timeout guard so processing never hangs
     const timeout = setTimeout(() => {
       resolve(imageSource);
-    }, 2000);
+    }, 1500);
 
     try {
       const img = new Image();
-      // Only set crossOrigin if http(s) URL to avoid data URI issues
       if (typeof imageSource === 'string' && imageSource.startsWith('http')) {
         img.crossOrigin = 'Anonymous';
       }
@@ -25,7 +22,7 @@ async function preprocessReceiptImage(imageSource) {
         clearTimeout(timeout);
         try {
           const maxDim = Math.max(img.width, img.height);
-          const scale = maxDim > 0 && maxDim < 1200 ? Math.min(2, 1400 / maxDim) : 1;
+          const scale = maxDim > 0 && maxDim < 1000 ? Math.min(2, 1200 / maxDim) : 1;
           
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -40,18 +37,18 @@ async function preprocessReceiptImage(imageSource) {
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const data = imageData.data;
 
-          // Contrast & brightness enhancement for ink
+          // Adaptive thresholding & contrast
           for (let i = 0; i < data.length; i += 4) {
             const r = data[i];
             const g = data[i + 1];
             const b = data[i + 2];
             let lum = 0.299 * r + 0.587 * g + 0.114 * b;
 
-            // Darken ink, brighten background
-            if (lum < 130) {
-              lum = lum * 0.75;
+            // Darken ink, brighten paper
+            if (lum < 135) {
+              lum = lum * 0.7;
             } else {
-              lum = Math.min(255, lum * 1.15 + 15);
+              lum = Math.min(255, lum * 1.15 + 20);
             }
 
             data[i] = lum;
@@ -60,7 +57,7 @@ async function preprocessReceiptImage(imageSource) {
           }
 
           ctx.putImageData(imageData, 0, 0);
-          resolve(canvas.toDataURL('image/jpeg', 0.9));
+          resolve(canvas.toDataURL('image/jpeg', 0.85));
         } catch {
           resolve(imageSource);
         }
@@ -80,61 +77,48 @@ async function preprocessReceiptImage(imageSource) {
 }
 
 /**
- * Scan receipt with Tesseract OCR
+ * Scan receipt with Tesseract OCR (Fast & Resilient)
  */
 export async function scanReceiptImage(imageSource, onProgress = () => {}) {
-  try {
-    onProgress({ status: 'Optimizing image contrast...', progress: 15 });
-    
-    // Safely enhance image
+  const ocrTask = async () => {
+    onProgress({ status: 'Preparing image...', progress: 20 });
     const processedImage = await preprocessReceiptImage(imageSource);
 
-    onProgress({ status: 'Loading recognition model...', progress: 30 });
+    onProgress({ status: 'Reading receipt details...', progress: 40 });
     const { createWorker } = await import('tesseract.js');
     
-    let worker;
-    try {
-      worker = await createWorker('ind+eng', 1, {
-        logger: (m) => {
-          if (m.status === 'recognizing text') {
-            onProgress({ 
-              status: 'Reading receipt details & amounts...', 
-              progress: 35 + Math.round((m.progress || 0) * 55) 
-            });
-          }
+    // Use 'eng' for ultra-fast startup (understands numbers, Rp, symbols, and latin text)
+    const worker = await createWorker('eng', 1, {
+      logger: (m) => {
+        if (m.status === 'recognizing text') {
+          onProgress({ 
+            status: 'Extracting amount and store name...', 
+            progress: 40 + Math.round((m.progress || 0) * 50) 
+          });
         }
-      });
-    } catch {
-      worker = await createWorker('eng', 1, {
-        logger: (m) => {
-          if (m.status === 'recognizing text') {
-            onProgress({ 
-              status: 'Reading receipt details & amounts...', 
-              progress: 35 + Math.round((m.progress || 0) * 55) 
-            });
-          }
-        }
-      });
-    }
+      }
+    });
 
-    onProgress({ status: 'Extracting fields...', progress: 60 });
+    onProgress({ status: 'Parsing information...', progress: 90 });
     const ret = await worker.recognize(processedImage);
-    
-    onProgress({ status: 'Finalizing parsing...', progress: 95 });
     await worker.terminate();
 
     const rawText = ret?.data?.text || '';
     const parsedData = parseReceiptText(rawText);
 
-    onProgress({ status: 'Done!', progress: 100 });
+    onProgress({ status: 'Complete!', progress: 100 });
     return {
       rawText,
       ...parsedData
     };
-  } catch (error) {
-    console.error('Receipt OCR failed:', error);
-    throw new Error(error.message || 'Failed to scan receipt image. You can still input manually.');
-  }
+  };
+
+  // 12-second total safety timeout so user is never stuck
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('Scanner timed out. Please enter details.')), 12000);
+  });
+
+  return Promise.race([ocrTask(), timeoutPromise]);
 }
 
 /**
@@ -153,27 +137,30 @@ export function parseReceiptText(rawText) {
   let detectedMerchant = '';
   let detectedCategory = 'Food';
 
-  // 1. Merchant / Store Name Detection
   const fullTextLower = rawText.toLowerCase();
 
-  if (fullTextLower.includes('laundry') || fullTextLower.includes('cuci') || fullTextLower.includes('setrika')) {
+  // 1. Store / Category Detection
+  if (fullTextLower.includes('laundry') || fullTextLower.includes('cuci') || fullTextLower.includes('setrika') || fullTextLower.includes('lipat') || fullTextLower.includes('kiloan')) {
     detectedMerchant = 'Laundry';
     detectedCategory = 'Bills';
-  } else if (fullTextLower.includes('bengkel') || fullTextLower.includes('tambal') || fullTextLower.includes('spbu') || fullTextLower.includes('pertamina')) {
-    detectedMerchant = fullTextLower.includes('spbu') ? 'SPBU Pertamina' : 'Bengkel';
+  } else if (fullTextLower.includes('bengkel') || fullTextLower.includes('tambal') || fullTextLower.includes('spbu') || fullTextLower.includes('pertamina') || fullTextLower.includes('shell') || fullTextLower.includes('grab') || fullTextLower.includes('gojek')) {
+    detectedMerchant = fullTextLower.includes('spbu') ? 'SPBU Pertamina' : (fullTextLower.includes('grab') ? 'Grab' : (fullTextLower.includes('gojek') ? 'Gojek' : 'Transport'));
     detectedCategory = 'Transport';
-  } else if (fullTextLower.includes('indomaret') || fullTextLower.includes('alfamart') || fullTextLower.includes('superindo')) {
-    detectedMerchant = fullTextLower.includes('indomaret') ? 'Indomaret' : (fullTextLower.includes('alfamart') ? 'Alfamart' : 'Superindo');
+  } else if (fullTextLower.includes('indomaret') || fullTextLower.includes('alfamart') || fullTextLower.includes('superindo') || fullTextLower.includes('hypermart') || fullTextLower.includes('resto') || fullTextLower.includes('cafe') || fullTextLower.includes('kopi')) {
+    detectedMerchant = fullTextLower.includes('indomaret') ? 'Indomaret' : (fullTextLower.includes('alfamart') ? 'Alfamart' : (fullTextLower.includes('superindo') ? 'Superindo' : 'Food & Groceries'));
     detectedCategory = 'Food';
-  } else if (fullTextLower.includes('apotek') || fullTextLower.includes('k-24') || fullTextLower.includes('kimia farma')) {
+  } else if (fullTextLower.includes('apotek') || fullTextLower.includes('k-24') || fullTextLower.includes('kimia farma') || fullTextLower.includes('klinik') || fullTextLower.includes('obat')) {
     detectedMerchant = 'Pharmacy';
     detectedCategory = 'Healthcare';
+  } else if (fullTextLower.includes('pln') || fullTextLower.includes('listrik') || fullTextLower.includes('wifi') || fullTextLower.includes('indihome') || fullTextLower.includes('pdam') || fullTextLower.includes('air')) {
+    detectedMerchant = 'Utility Bill';
+    detectedCategory = 'Bills';
   }
 
   if (!detectedMerchant) {
     for (const line of lines.slice(0, 5)) {
       const cleanLine = line.replace(/[^a-zA-Z0-9 &.,'/-]/g, '').trim();
-      if (cleanLine.length >= 3 && !cleanLine.match(/^\d+$/) && !cleanLine.toLowerCase().startsWith('nama') && !cleanLine.toLowerCase().startsWith('no')) {
+      if (cleanLine.length >= 3 && !cleanLine.match(/^\d+$/) && !cleanLine.toLowerCase().startsWith('nama') && !cleanLine.toLowerCase().startsWith('no') && !cleanLine.toLowerCase().startsWith('tanggal')) {
         detectedMerchant = cleanLine;
         break;
       }
@@ -194,13 +181,13 @@ export function parseReceiptText(rawText) {
     const lower = line.toLowerCase();
     const hasTotalKeyword = totalKeywords.some(kw => lower.includes(kw));
 
-    // Price matches
+    // Standard Price match: 49.000, 49,000, 49000
     const priceMatches = line.match(/(?:rp|idr)?\s*([0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]{2})?|[0-9]{4,9})/gi);
     if (priceMatches) {
       for (const p of priceMatches) {
         const num = cleanPriceStringToNumber(p);
         if (num >= 500 && num <= 1000000000) {
-          amountsFound.push({ value: num, isTotalLine: hasTotalKeyword, weight: hasTotalKeyword ? 10 : 2 });
+          amountsFound.push({ value: num, isTotalLine: hasTotalKeyword, weight: hasTotalKeyword ? 15 : 3 });
         }
       }
     }
@@ -213,95 +200,101 @@ export function parseReceiptText(rawText) {
         amountsFound.push({
           value: parsedHandwritten,
           isTotalLine: true,
-          weight: 15
+          weight: 20
         });
       }
     }
   }
 
   if (amountsFound.length > 0) {
-    amountsFound.sort((a, b) => {
-      if (b.weight !== a.weight) return b.weight - a.weight;
-      return b.value - a.value;
-    });
-    detectedAmount = amountsFound[0].value;
+    const totalLines = amountsFound.filter(a => a.isTotalLine);
+    if (totalLines.length > 0) {
+      totalLines.sort((a, b) => b.weight - a.weight || b.value - a.value);
+      detectedAmount = totalLines[0].value;
+    } else {
+      amountsFound.sort((a, b) => b.value - a.value);
+      detectedAmount = amountsFound[0].value;
+    }
   }
 
-  // 3. Date Detection
+  // 3. Date Detection (e.g. 23/8/26, 23-08-2026, 2026-08-23)
+  const datePatterns = [
+    /(\d{1,2})[\s/.-]+(\d{1,2})[\s/.-]+(\d{2,4})/,
+    /(\d{4})[\s/.-]+(\d{1,2})[\s/.-]+(\d{1,2})/
+  ];
+
   for (const line of lines) {
-    const dateMatch = line.match(/(\b\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{2,4}\b)/) ||
-                      line.match(/(\b\d{4})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{1,2}\b)/);
-    if (dateMatch) {
-      try {
-        let year, month, day;
-        if (dateMatch[1].length === 4) {
-          year = parseInt(dateMatch[1], 10);
-          month = parseInt(dateMatch[2], 10);
-          day = parseInt(dateMatch[3], 10);
+    for (const pattern of datePatterns) {
+      const match = line.match(pattern);
+      if (match) {
+        let y, m, d;
+        if (match[1].length === 4) {
+          y = parseInt(match[1], 10);
+          m = parseInt(match[2], 10);
+          d = parseInt(match[3], 10);
         } else {
-          day = parseInt(dateMatch[1], 10);
-          month = parseInt(dateMatch[2], 10);
-          year = parseInt(dateMatch[3], 10);
-          if (year < 100) year += 2000;
+          d = parseInt(match[1], 10);
+          m = parseInt(match[2], 10);
+          y = parseInt(match[3], 10);
+          if (y < 100) y += 2000;
         }
 
-        if (month >= 1 && month <= 12 && day >= 1 && day <= 31 && year >= 2000 && year <= 2035) {
-          detectedDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        if (m >= 1 && m <= 12 && d >= 1 && d <= 31 && y >= 2020 && y <= 2035) {
+          detectedDate = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
           break;
         }
-      } catch {
-        // continue
       }
     }
+    if (detectedDate) break;
   }
-
-  // 4. Standard Valid Category Mapping
-  const CATEGORY_MAP = {
-    'Food': ['kopi', 'coffee', 'cafe', 'resto', 'restaurant', 'makan', 'food', 'bakso', 'ayam', 'nasi', 'burger', 'pizza', 'starbucks', 'kfc', 'mcdonald', 'mcd', 'hokben', 'mie', 'beverage', 'minuman', 'snack', 'roti', 'bread', 'dapur', 'kuliner', 'tea', 'boba', 'chatime', 'superindo', 'alfamart', 'indomaret', 'pasar'],
-    'Transport': ['pertamina', 'spbu', 'bensin', 'shell', 'parkir', 'parking', 'grab', 'gojek', 'toll', 'tol', 'taxi', 'bluebird', 'kereta', 'kai', 'flight', 'tiket', 'traveloka', 'service mobil', 'service motor', 'tambal ban', 'pertamax', 'pertalite', 'oli', 'bengkel'],
-    'Bills': ['laundry', 'cuci', 'setrika', 'dry clean', 'wash', 'lipat', 'kiloan', 'pln', 'listrik', 'pdam', 'air', 'telkom', 'indihome', 'wifi', 'bpjs', 'pajak', 'tagihan', 'internet', 'pulsa', 'token', 'pbb', 'biznet'],
-    'Healthcare': ['apotek', 'pharmacy', 'kimia farma', 'k24', 'obat', 'dokter', 'hospital', 'rumah sakit', 'rs', 'klinik', 'dental', 'gigi', 'medis', 'vitamin'],
-    'Entertainment': ['cinema', 'xxi', 'cgv', 'cinepolis', 'bioskop', 'game', 'steam', 'playstation', 'karaoke', 'ticket', 'netflix', 'spotify', 'disney', 'billiard'],
-    'Other': ['shopee', 'tokopedia', 'lazada', 'toko', 'belanja', 'uniqlo', 'zara', 'h&m', 'miniso', 'hardware']
-  };
-
-  for (const [cat, keywords] of Object.entries(CATEGORY_MAP)) {
-    if (keywords.some(kw => fullTextLower.includes(kw))) {
-      detectedCategory = cat;
-      break;
-    }
-  }
-
-  let finalNote = detectedMerchant ? `${detectedMerchant}` : 'Receipt Scan';
-  if (finalNote.length > 50) finalNote = finalNote.substring(0, 50);
 
   return {
-    amount: detectedAmount,
+    amount: detectedAmount ? String(detectedAmount) : '',
     date: detectedDate || new Date().toISOString().split('T')[0],
-    note: finalNote,
-    category: detectedCategory,
+    note: detectedMerchant || 'Receipt Expense',
+    category: detectedCategory || 'Food',
     splitType: 'personal'
   };
 }
 
-function parseHandwrittenNumber(str) {
+function cleanPriceStringToNumber(str) {
   if (!str) return 0;
-  let s = str.trim();
-  s = s.replace(/^[yYuUчhH]/, '4');
-  s = s.replace(/[gGqQ]/g, '9');
-  s = s.replace(/[oODQU]/g, '0');
-  s = s.replace(/[lIi|!/]/g, '1');
-  s = s.replace(/[sS]/g, '5');
-  s = s.replace(/[zZ]/g, '2');
-  s = s.replace(/[bB]/g, '8');
-  return cleanPriceStringToNumber(s);
+  let s = str.replace(/[^\d.,]/g, '').trim();
+  if (s.includes(',') && !s.includes('.')) {
+    const parts = s.split(',');
+    if (parts[parts.length - 1].length === 3) {
+      s = s.replace(/,/g, '');
+    } else {
+      s = s.replace(/,/g, '.');
+    }
+  } else if (s.includes('.') && s.includes(',')) {
+    if (s.lastIndexOf('.') > s.lastIndexOf(',')) {
+      s = s.replace(/,/g, '');
+    } else {
+      s = s.replace(/\./g, '').replace(',', '.');
+    }
+  } else if (s.includes('.')) {
+    const parts = s.split('.');
+    if (parts[parts.length - 1].length === 3) {
+      s = s.replace(/\./g, '');
+    }
+  }
+  const val = parseFloat(s);
+  return isNaN(val) ? 0 : Math.round(val);
 }
 
-function cleanPriceStringToNumber(priceStr) {
-  if (!priceStr) return 0;
-  let str = priceStr.toLowerCase().replace(/rp|idr|\s/g, '');
-  str = str.replace(/[.,]00$/, '');
-  str = str.replace(/[^0-9]/g, '');
-  const num = parseInt(str, 10);
+function parseHandwrittenNumber(text) {
+  if (!text) return 0;
+  let normalized = text
+    .replace(/[oOQD]/g, '0')
+    .replace(/[gGq]/g, '9')
+    .replace(/[yY]/g, '4')
+    .replace(/[iIl|!]/g, '1')
+    .replace(/[sS]/g, '5')
+    .replace(/[zZ]/g, '2')
+    .replace(/[bB]/g, '8')
+    .replace(/[^\d]/g, '');
+
+  const num = parseInt(normalized, 10);
   return isNaN(num) ? 0 : num;
 }

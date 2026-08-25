@@ -22,35 +22,63 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
     setSuccessMsg('');
     setScanResult(null);
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const dataUrl = e.target.result;
-      setImageSrc(dataUrl);
-
-      setIsScanning(true);
-      try {
-        const result = await scanReceiptImage(dataUrl, (progress) => {
-          setProgressInfo(progress);
-        });
-
-        setScanResult({
-          amount: result.amount || '',
-          date: result.date || new Date().toISOString().split('T')[0],
-          category: result.category || 'Food',
-          note: result.note || '',
-          splitType: defaultSplitType || 'personal'
-        });
-      } catch (err) {
-        console.error('Scan error:', err);
-        setError(err.message || 'Failed to read receipt. Please try another photo.');
-      } finally {
-        setIsScanning(false);
+    try {
+      // Downscale image if large (e.g. mobile camera 12MP photos) to save memory
+      let fileToProcess = file;
+      if (file.size > 500 * 1024) {
+        try {
+          const imageCompression = (await import('browser-image-compression')).default;
+          fileToProcess = await imageCompression(file, {
+            maxSizeMB: 0.6,
+            maxWidthOrHeight: 1200,
+            useWebWorker: true
+          });
+        } catch (compErr) {
+          console.warn('Compression skipped:', compErr);
+        }
       }
-    };
-    reader.readAsDataURL(file);
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const dataUrl = e.target.result;
+        setImageSrc(dataUrl);
+
+        setIsScanning(true);
+        try {
+          const result = await scanReceiptImage(dataUrl, (progress) => {
+            setProgressInfo(progress);
+          });
+
+          setScanResult({
+            amount: result.amount || '',
+            date: result.date || new Date().toISOString().split('T')[0],
+            category: result.category || 'Food',
+            note: result.note || 'Receipt Expense',
+            splitType: defaultSplitType || 'personal'
+          });
+        } catch (err) {
+          console.warn('OCR Scan warning:', err);
+          setError('Could not auto-detect all fields. Please confirm details below:');
+          // Provide fallback fields so user is never blocked
+          setScanResult({
+            amount: '',
+            date: new Date().toISOString().split('T')[0],
+            category: 'Food',
+            note: 'Receipt Expense',
+            splitType: defaultSplitType || 'personal'
+          });
+        } finally {
+          setIsScanning(false);
+        }
+      };
+      reader.readAsDataURL(fileToProcess);
+    } catch (err) {
+      console.error('File load error:', err);
+      setError('Could not load image. Please try again.');
+    }
   };
 
-  // Automatically save transaction into the database
+  // Save transaction directly into database
   const handleAutoSave = async () => {
     if (!scanResult || !scanResult.amount || isSaving) return;
 
@@ -68,16 +96,16 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
         amount: amountInt,
         type: 'expense',
         category: (scanResult.category || 'Food').trim(),
-        note: (scanResult.note || 'Receipt Scan').trim(),
+        note: (scanResult.note || 'Receipt Expense').trim(),
         date: scanResult.date || new Date().toISOString().split('T')[0],
         split_type: scanResult.splitType || defaultSplitType || 'personal'
       });
 
-      setSuccessMsg('Transaction saved automatically!');
+      setSuccessMsg('Transaction recorded successfully!');
       setTimeout(() => {
         if (onEntrySaved) onEntrySaved(response.entry);
         onClose();
-      }, 500);
+      }, 600);
     } catch (err) {
       console.error('Save transaction error:', err);
       setError(err.message || 'Failed to save transaction');
@@ -95,14 +123,14 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fade-in text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in text-white">
       <div className="w-full max-w-md bg-[#121212] rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
         
         {/* Header */}
         <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
           <div>
             <h3 className="font-semibold text-base text-white">Receipt Scanner</h3>
-            <p className="text-xs text-gray-400">Scan receipt to auto-record expense</p>
+            <p className="text-xs text-gray-400">Capture or upload to record expense</p>
           </div>
           <button 
             onClick={onClose}
@@ -127,7 +155,7 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
                 <div>
                   <h4 className="font-medium text-white text-sm">Upload or capture receipt</h4>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    Amount, date, and category will be read automatically.
+                    Amount, store name, and date will be recognized automatically.
                   </p>
                 </div>
 
@@ -144,7 +172,7 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
                     onClick={() => fileInputRef.current?.click()}
                     className="flex-1 py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs transition-all"
                   >
-                    Gallery
+                    Gallery / File
                   </button>
                 </div>
               </div>
@@ -175,7 +203,7 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
                 <img src={imageSrc} alt="Receipt preview" className="w-full h-full object-contain max-h-48 opacity-80" />
                 
                 {isScanning && (
-                  <div className="absolute inset-0 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center p-4">
+                  <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-4">
                     <div className="w-8 h-8 rounded-full border-2 border-white border-t-transparent animate-spin mb-2" />
                     <p className="text-xs font-medium text-white">{progressInfo.status || 'Scanning receipt...'}</p>
                     <div className="w-36 bg-white/20 h-1.5 rounded-full mt-2.5 overflow-hidden">
@@ -189,7 +217,7 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
               </div>
 
               {error && (
-                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-400">
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300">
                   {error}
                 </div>
               )}
@@ -204,13 +232,13 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
               {scanResult && !isScanning && !successMsg && (
                 <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-4 space-y-3">
                   <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                    <span className="text-xs font-semibold text-gray-300">Extracted Information</span>
+                    <span className="text-xs font-semibold text-gray-300">Transaction Details</span>
                     <button
                       type="button"
                       onClick={resetScanner}
                       className="text-xs text-gray-400 hover:text-white"
                     >
-                      Scan another
+                      Scan another photo
                     </button>
                   </div>
 
@@ -225,6 +253,7 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
                         onChange={(e) => setScanResult({ ...scanResult, amount: e.target.value })}
                         placeholder="0"
                         className="w-full bg-black/40 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-white font-semibold text-base focus:outline-none focus:border-white/30"
+                        required
                       />
                     </div>
                   </div>
@@ -249,8 +278,8 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
                         className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
                       >
                         <option value="Food">🍱 Food</option>
-                        <option value="Transport">🚗 Transport</option>
                         <option value="Bills">🧾 Bills / Laundry</option>
+                        <option value="Transport">🚗 Transport</option>
                         <option value="Healthcare">💊 Healthcare</option>
                         <option value="Entertainment">🎮 Entertainment</option>
                         <option value="Rent">🏠 Rent</option>
@@ -262,12 +291,12 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
 
                   {/* Note / Merchant */}
                   <div>
-                    <label className="text-[11px] font-medium text-gray-400 block mb-1">Note / Store Name</label>
+                    <label className="text-[11px] font-medium text-gray-400 block mb-1">Store / Note</label>
                     <input
                       type="text"
                       value={scanResult.note}
                       onChange={(e) => setScanResult({ ...scanResult, note: e.target.value })}
-                      placeholder="e.g. Superindo, Cafe, etc."
+                      placeholder="e.g. Laundry, Superindo, etc."
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
                     />
                   </div>
@@ -321,7 +350,7 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
               disabled={isSaving || !scanResult.amount}
               className="px-5 py-2 rounded-xl bg-white text-black font-semibold text-xs flex items-center gap-1.5 transition-all hover:bg-gray-200 disabled:opacity-50"
             >
-              {isSaving ? 'Saving...' : 'Auto-Save Transaction'}
+              {isSaving ? 'Saving...' : 'Save to Finance'}
             </button>
           )}
         </div>
