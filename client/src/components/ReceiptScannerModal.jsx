@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { scanReceiptImage } from '../utils/receiptOcr';
 import { apiPost } from '../hooks/useApi';
 
-export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved }) {
+export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, defaultSplitType = 'personal' }) {
   const [imageSrc, setImageSrc] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -38,7 +38,7 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved }) {
           date: result.date || new Date().toISOString().split('T')[0],
           category: result.category || 'Food',
           note: result.note || '',
-          splitType: 'personal'
+          splitType: defaultSplitType || 'personal'
         });
       } catch (err) {
         console.error('Scan error:', err);
@@ -67,17 +67,17 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved }) {
       const response = await apiPost('/api/finance', {
         amount: amountInt,
         type: 'expense',
-        category: scanResult.category || 'Food',
+        category: (scanResult.category || 'Food').trim(),
         note: (scanResult.note || 'Receipt Scan').trim(),
         date: scanResult.date || new Date().toISOString().split('T')[0],
-        split_type: scanResult.splitType || 'personal'
+        split_type: scanResult.splitType || defaultSplitType || 'personal'
       });
 
       setSuccessMsg('Transaction saved automatically!');
       setTimeout(() => {
         if (onEntrySaved) onEntrySaved(response.entry);
         onClose();
-      }, 700);
+      }, 500);
     } catch (err) {
       console.error('Save transaction error:', err);
       setError(err.message || 'Failed to save transaction');
@@ -262,6 +262,31 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved }) {
                       placeholder="e.g. Superindo, Cafe, etc."
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
                     />
+                  </div>
+
+                  {/* Account / Split Selection */}
+                  <div className="flex items-center justify-between pt-1 border-t border-white/5 text-xs">
+                    <span className="text-gray-400 text-[11px]">Save as:</span>
+                    <div className="flex rounded-lg p-0.5 bg-black/40 border border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => setScanResult({ ...scanResult, splitType: 'personal' })}
+                        className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all ${
+                          scanResult.splitType === 'personal' ? 'bg-white text-black font-semibold' : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        Personal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setScanResult({ ...scanResult, splitType: 'shared' })}
+                        className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all ${
+                          scanResult.splitType === 'shared' ? 'bg-white text-black font-semibold' : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        Shared
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

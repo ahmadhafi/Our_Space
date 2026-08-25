@@ -2,13 +2,13 @@ import { useState, useEffect } from 'react';
 import CategoryPickerModal, { getCategoryColor } from './CategoryPickerModal';
 import ReceiptScannerModal from './ReceiptScannerModal';
 
-export default function FinanceForm({ onEntryCreated, onCancel }) {
+export default function FinanceForm({ onEntryCreated, onCancel, defaultSplitType = 'personal' }) {
   const [type, setType] = useState('expense'); // 'expense' | 'income' | 'debt'
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('Food');
   const [note, setNote] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [splitType, setSplitType] = useState('personal'); // 'personal' | 'shared'
+  const [splitType, setSplitType] = useState(defaultSplitType || 'personal'); // 'personal' | 'shared'
   const [wallet, setWallet] = useState('Cash');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -276,6 +276,7 @@ export default function FinanceForm({ onEntryCreated, onCancel }) {
       {/* Smart Receipt Scanner Modal */}
       <ReceiptScannerModal
         isOpen={showScannerModal}
+        defaultSplitType={splitType}
         onClose={() => setShowScannerModal(false)}
         onEntrySaved={(entry) => {
           if (onEntryCreated) onEntryCreated(entry);

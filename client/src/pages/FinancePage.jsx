@@ -188,6 +188,15 @@ export default function FinancePage() {
     return formatRp(amt);
   };
 
+  const toggleSort = (field) => {
+    if (sortField === field) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('desc');
+    }
+  };
+
   const sortedEntries = () => {
     if (!data?.entries) return [];
     let entries = [...data.entries];
@@ -325,6 +334,14 @@ export default function FinancePage() {
             >
               Shared
             </button>
+            <button
+              onClick={() => setView('all')}
+              className={`px-2.5 py-1 rounded-md transition-all ${
+                view === 'all' ? 'bg-white text-black font-semibold' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              All
+            </button>
           </div>
         </div>
 
@@ -374,6 +391,7 @@ export default function FinancePage() {
       {showForm && (
         <FinanceForm 
           onEntryCreated={handleEntryCreated} 
+          defaultSplitType={view === 'shared' ? 'shared' : 'personal'}
           onCancel={() => setShowForm(false)} 
         />
       )}
@@ -960,6 +978,7 @@ export default function FinancePage() {
       {/* Smart Receipt Scanner Modal */}
       <ReceiptScannerModal
         isOpen={showScannerModal}
+        defaultSplitType={view === 'shared' ? 'shared' : 'personal'}
         onClose={() => setShowScannerModal(false)}
         onEntrySaved={() => {
           fetchData();

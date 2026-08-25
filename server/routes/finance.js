@@ -22,7 +22,7 @@ router.use(authenticateToken);
 router.get('/',
   [
     query('month').optional().matches(/^\d{4}-\d{2}$/).withMessage('Month must be YYYY-MM format'),
-    query('view').optional().isIn(['personal', 'shared']).withMessage('View must be personal or shared')
+    query('view').optional().isIn(['personal', 'shared', 'all']).withMessage('View must be personal, shared, or all')
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -40,13 +40,13 @@ router.get('/',
       // Parse year and month for date range
       const [year, mon] = month.split('-').map(Number);
       const startDate = `${month}-01`;
-      const endDate = `${year}-${String(mon + 1).padStart(2, '0')}-01`;
-      // Handle December -> January
-      const actualEnd = mon === 12 ? `${year + 1}-01-01` : endDate;
+      const nextMon = mon === 12 ? 1 : mon + 1;
+      const nextYear = mon === 12 ? year + 1 : year;
+      const endDate = `${nextYear}-${String(nextMon).padStart(2, '0')}-01`;
 
       // Get all entries for the month depending on the view
       let entriesQuery = '';
-      let entriesParams = [startDate, actualEnd];
+      let entriesParams = [month, startDate, endDate];
       
       if (view === 'personal') {
         entriesQuery = `
@@ -55,7 +55,18 @@ router.get('/',
             u.id as user_id, u.username, u.display_name, u.avatar
           FROM finance_entries f
           JOIN users u ON f.user_id = u.id
-          WHERE f.date >= $1 AND f.date < $2 AND f.split_type = 'personal' AND f.user_id = $3
+          WHERE (f.date LIKE $1 || '%' OR (f.date >= $2 AND f.date < $3)) AND f.split_type = 'personal' AND f.user_id = $4
+          ORDER BY f.date DESC, f.created_at DESC
+        `;
+        entriesParams.push(req.user.id);
+      } else if (view === 'all') {
+        entriesQuery = `
+          SELECT 
+            f.id, f.amount, f.type, f.category, f.note, f.date, f.split_type, f.created_at,
+            u.id as user_id, u.username, u.display_name, u.avatar
+          FROM finance_entries f
+          JOIN users u ON f.user_id = u.id
+          WHERE (f.date LIKE $1 || '%' OR (f.date >= $2 AND f.date < $3)) AND (f.split_type = 'shared' OR f.user_id = $4)
           ORDER BY f.date DESC, f.created_at DESC
         `;
         entriesParams.push(req.user.id);
@@ -66,7 +77,7 @@ router.get('/',
             u.id as user_id, u.username, u.display_name, u.avatar
           FROM finance_entries f
           JOIN users u ON f.user_id = u.id
-          WHERE f.date >= $1 AND f.date < $2 AND f.split_type = 'shared'
+          WHERE (f.date LIKE $1 || '%' OR (f.date >= $2 AND f.date < $3)) AND f.split_type = 'shared'
           ORDER BY f.date DESC, f.created_at DESC
         `;
       }
@@ -239,7 +250,7 @@ router.post('/',
     body('type').isIn(['income', 'expense']).withMessage('Type must be income or expense'),
     body('category').trim().notEmpty().isLength({ max: 100 }).withMessage('Category is required'),
     body('note').optional().trim().isLength({ max: 500 }).withMessage('Note must be under 500 characters'),
-    body('date').isISO8601().withMessage('Date must be a valid date'),
+    body('date').notEmpty().withMessage('Date is required'),
     body('split_type').optional().isIn(VALID_SPLIT_TYPES).withMessage('split_type must be personal or shared')
   ],
   async (req, res) => {
@@ -253,9 +264,17 @@ router.post('/',
       const { amount, type, category, note, date, split_type = 'personal' } = req.body;
       const now = new Date().toISOString();
 
+      let normalizedDate = date;
+      try {
+        const d = new Date(date);
+        if (!isNaN(d.getTime())) {
+          normalizedDate = d.toISOString().split('T')[0];
+        }
+      } catch {}
+
       const { rows } = await db.query(
         'INSERT INTO finance_entries (user_id, amount, type, category, note, date, split_type, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
-        [req.user.id, amount, type, category, note || '', date, split_type, now]
+        [req.user.id, amount, type, category, note || '', normalizedDate, split_type, now]
       );
       const entryId = rows[0].id;
 
@@ -448,7 +467,7 @@ router.delete('/budget/:id',
 
 // GET /api/finance/goals
 router.get('/goals', 
-  [query('view').optional().isIn(['personal', 'shared']).withMessage('View must be personal or shared')],
+  [query('view').optional().isIn(['personal', 'shared', 'all']).withMessage('View must be personal, shared, or all')],
   async (req, res) => {
   try {
     const db = getDb();
@@ -457,6 +476,9 @@ router.get('/goals',
     let goals = [];
     if (view === 'personal') {
       const result = await db.query('SELECT * FROM finance_goals WHERE type = $1 AND user_id = $2 ORDER BY created_at DESC', [view, req.user.id]);
+      goals = result.rows;
+    } else if (view === 'all') {
+      const result = await db.query('SELECT * FROM finance_goals WHERE type = $1 OR user_id = $2 ORDER BY created_at DESC', ['shared', req.user.id]);
       goals = result.rows;
     } else {
       const result = await db.query('SELECT * FROM finance_goals WHERE type = $1 ORDER BY created_at DESC', [view]);
