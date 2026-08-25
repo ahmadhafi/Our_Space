@@ -1,19 +1,20 @@
-import { NavLink, Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
-import { getMediaUrl } from '../utils/media';
-import { useTheme } from '../hooks/useTheme';
 import { useEffect } from 'react';
+import { Outlet, NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
+import { useTheme } from '../hooks/useTheme';
+import { usePushNotifications } from '../hooks/usePushNotifications';
+import IosInstallPrompt from './IosInstallPrompt';
 
-const navItems = [
-  { path: '/', label: 'Feeds', icon: HomeIcon },
-  { path: '/finance', label: 'Finance', icon: ChartIcon },
-  { path: '/profile', label: 'Profile', icon: UserIcon },
-  { path: '/activity', label: 'Activity', icon: ClockIcon },
-];
+const getMediaUrl = (path) => {
+  if (!path) return '';
+  if (path.startsWith('http')) return path;
+  return `/uploads/${path}`;
+};
 
 export default function Layout() {
   const { user, logout } = useAuth();
   const { initTheme } = useTheme();
+  const { subscribeUser } = usePushNotifications();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -21,54 +22,25 @@ export default function Layout() {
     if (user) {
       initTheme(user);
 
-      // Push Notification Subscription
-      if ('Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window) {
-        Notification.requestPermission().then(async (permission) => {
-          if (permission === 'granted') {
-            try {
-              const registration = await navigator.serviceWorker.ready;
-              // Check if already subscribed
-              let subscription = await registration.pushManager.getSubscription();
-              if (!subscription) {
-                // You must supply the same public key used on the server
-                const VAPID_PUBLIC_KEY = 'BCDPTWVpW6AO5vV9RY0FFukISlvGll4MGDaGvE-LIwjEPc5J2Y_YNtdntMwr2itLp11c59wTTBUWaRUH-kqXuXM';
-                const convertedVapidKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
-                subscription = await registration.pushManager.subscribe({
-                  userVisibleOnly: true,
-                  applicationServerKey: convertedVapidKey
-                });
-              }
-              // Send subscription to server
-              import('../hooks/useApi').then(({ apiPost }) => {
-                apiPost('/api/push/subscribe', subscription).catch(console.error);
-              });
-            } catch (err) {
-              console.error('Push subscription failed:', err);
-            }
-          }
-        });
+      // Auto-sync push subscription if already granted
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        subscribeUser().catch(() => {});
       }
     }
-  }, [user, initTheme]);
-
-  // Helper to convert VAPID key
-  function urlBase64ToUint8Array(base64String) {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding)
-      .replace(/-/g, '+')
-      .replace(/_/g, '/');
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
-  }
+  }, [user, initTheme, subscribeUser]);
 
   const handleLogout = async () => {
     await logout();
     navigate('/login');
   };
+
+  const navItems = [
+    { path: '/', label: 'Feed', icon: HomeIcon },
+    { path: '/chat', label: 'Chat', icon: ChatIcon },
+    { path: '/finance', label: 'Finance', icon: ChartIcon },
+    { path: '/activity', label: 'Activity', icon: ClockIcon },
+    { path: '/profile', label: 'Profile', icon: UserIcon }
+  ];
 
   return (
     <div className="min-h-screen bg-black flex justify-center w-full">
@@ -78,55 +50,53 @@ export default function Layout() {
         {!location.pathname.startsWith('/chat/') && (
         <header 
           className="md:hidden fixed top-0 w-full z-50 px-4 pb-4 flex items-center justify-between bg-gradient-to-b from-black/80 to-transparent pointer-events-none"
-          style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
+          style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
         >
-          <div className="pointer-events-auto">
-            <Link to="/profile">
+          <div className="flex items-center gap-3 pointer-events-auto">
+            <Link to="/profile" className="flex items-center gap-2">
               {user?.avatar ? (
-                <img src={getMediaUrl(user.avatar)} alt="" className="w-10 h-10 rounded-full object-cover border-2 border-transparent hover:border-[#FFFC00] transition-colors" />
+                <img src={getMediaUrl(user.avatar)} alt="" className="w-9 h-9 rounded-full object-cover border border-white/20" />
               ) : (
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold bg-[#FFFC00]">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center text-black font-bold text-sm bg-white">
                   {user?.username?.charAt(0).toUpperCase()}
                 </div>
               )}
             </Link>
+            <div>
+              <h1 className="text-white font-bold text-base leading-tight">Our Space</h1>
+              <p className="text-gray-400 text-[10px]">Private & Shared Moments</p>
+            </div>
           </div>
           
-          <div className="flex-1 flex justify-center pointer-events-auto">
-            <Link to="/" className="flex items-center gap-2">
-              <img src="/app-icon.jpg" alt="Logo" className="w-8 h-8 rounded-lg shadow-sm" />
-            </Link>
-          </div>
-
           <div className="flex items-center gap-2 pointer-events-auto">
-            <button onClick={() => navigate('/chat')} className="w-10 h-10 rounded-full bg-black/40 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/60 transition-colors">
+            <Link to="/chat" className="p-2.5 bg-[#1e1e1e]/80 backdrop-blur-md rounded-full text-white hover:bg-white/20 transition-colors border border-white/10 shadow-lg">
               <ChatIcon className="w-5 h-5" />
-            </button>
-            <button onClick={handleLogout} className="w-10 h-10 rounded-full bg-black/40 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/60 transition-colors">
-              <LogoutIcon className="w-5 h-5" />
-            </button>
+            </Link>
           </div>
         </header>
         )}
 
-        {/* Desktop Sidebar */}
-        <aside className="hidden md:flex flex-col w-64 border-r border-[#333] bg-[#111] p-6 shrink-0 sticky top-0 h-screen overflow-y-auto z-10">
-          <Link to="/" className="flex items-center gap-3 mb-10">
-            <img src="/app-icon.jpg" alt="Logo" className="w-10 h-10 rounded-xl shadow-sm" />
-            <span className="text-white font-bold text-xl tracking-wide">Ours</span>
-          </Link>
+        {/* Desktop Sidebar Navigation */}
+        <aside className="hidden md:flex flex-col w-64 p-6 border-r border-[#222] bg-[#0a0a0a] min-h-screen sticky top-0">
+          <div className="flex items-center gap-3 mb-8">
+            <img src="/app-icon.jpg" alt="Our Space" className="w-9 h-9 rounded-xl border border-white/10 shadow-md" />
+            <div>
+              <h1 className="text-white font-bold text-lg leading-tight">Our Space</h1>
+              <p className="text-gray-500 text-xs">Private Couples App</p>
+            </div>
+          </div>
 
-          <nav className="flex-1 flex flex-col gap-2">
+          <nav className="space-y-2 flex-1">
             {navItems.map(({ path, label, icon: Icon }) => (
               <NavLink
                 key={path}
                 to={path}
                 end={path === '/'}
                 className={({ isActive }) =>
-                  `flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-300 ${
-                    isActive 
-                      ? 'bg-white/10 text-[#FFFC00] font-bold' 
-                      : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  `flex items-center gap-4 px-4 py-3 rounded-2xl font-semibold transition-all duration-300 ${
+                    isActive
+                      ? 'bg-white text-black shadow-lg shadow-white/5'
+                      : 'text-gray-400 hover:text-white hover:bg-[#141414]'
                   }`
                 }
               >
@@ -139,9 +109,9 @@ export default function Layout() {
           <div className="mt-auto pt-6 border-t border-[#333] flex items-center justify-between">
             <Link to="/profile" className="flex items-center gap-3 group">
               {user?.avatar ? (
-                <img src={getMediaUrl(user.avatar)} alt="" className="w-10 h-10 rounded-full object-cover border-2 border-transparent group-hover:border-[#FFFC00] transition-colors" />
+                <img src={getMediaUrl(user.avatar)} alt="" className="w-10 h-10 rounded-full object-cover border-2 border-transparent group-hover:border-white transition-colors" />
               ) : (
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold bg-[#FFFC00]">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold bg-white">
                   {user?.username?.charAt(0).toUpperCase()}
                 </div>
               )}
@@ -173,7 +143,7 @@ export default function Layout() {
               end={path === '/'}
               className={({ isActive }) =>
                 `flex flex-col items-center gap-1 transition-all duration-300 ${
-                  isActive ? 'text-[#FFFC00] scale-110 drop-shadow-[0_0_8px_rgba(255,252,0,0.5)]' : 'text-gray-500 hover:text-white'
+                  isActive ? 'text-white scale-110 drop-shadow-[0_0_8px_rgba(255,255,255,0.4)]' : 'text-gray-500 hover:text-white'
                 }`
               }
             >
@@ -182,6 +152,10 @@ export default function Layout() {
           ))}
         </nav>
         )}
+
+        {/* iOS PWA Installation Guidance */}
+        <IosInstallPrompt />
+
       </div>
     </div>
   );
@@ -190,12 +164,11 @@ export default function Layout() {
 function ChatIcon({ className }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a.75.75 0 01-.817-.183.75.75 0 01-.183-.817A5.972 5.972 0 014.5 17.555C2.378 15.655 1.5 13.9 1.5 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
     </svg>
   );
 }
 
-/* Inline SVG Icons */
 function HomeIcon({ className }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">

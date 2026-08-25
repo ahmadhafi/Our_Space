@@ -3,6 +3,7 @@ const router = express.Router();
 const { getDb } = require('../db/connection');
 const { requireAuth } = require('../middleware/auth');
 const { upload } = require('../middleware/upload');
+const { sendPushToUser } = require('../services/pushService');
 const { put } = require('@vercel/blob');
 const fs = require('fs');
 
@@ -98,37 +99,12 @@ router.post('/:userId', requireAuth, upload.single('media'), async (req, res, ne
     `, [myId, otherId, text || '', media_type || null, file_path, reply_to_story_url || null, reply_to_story_type || null]);
 
     // Send push notification
-    try {
-      const subscriptions = await db.query('SELECT subscription FROM push_subscriptions WHERE user_id = $1', [otherId]);
-      if (subscriptions.rows.length > 0) {
-        const webpush = require('web-push');
-        // Require only once at top in real app, but this is fine here
-        if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
-          webpush.setVapidDetails('mailto:test@example.com', process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
-          
-          const payload = JSON.stringify({
-            title: `New message from ${req.user.display_name || req.user.username}`,
-            body: text || 'Sent an attachment',
-            icon: req.user.avatar ? `/uploads/${req.user.avatar}` : '/app-icon.jpg',
-            url: `/chat/${myId}`
-          });
-
-          for (const sub of subscriptions.rows) {
-            try {
-              const pushSubscription = JSON.parse(sub.subscription);
-              await webpush.sendNotification(pushSubscription, payload);
-            } catch (pushErr) {
-              // If subscription is invalid/expired, remove it
-              if (pushErr.statusCode === 410 || pushErr.statusCode === 404) {
-                await db.query('DELETE FROM push_subscriptions WHERE subscription = $1', [sub.subscription]);
-              }
-            }
-          }
-        }
-      }
-    } catch (pushError) {
-      console.error('Error sending push:', pushError);
-    }
+    sendPushToUser(otherId, {
+      title: `${req.user.display_name || req.user.username}`,
+      body: text || (media_type ? `Sent a ${media_type}` : 'Sent an attachment'),
+      icon: req.user.avatar ? `/uploads/${req.user.avatar}` : '/app-icon.jpg',
+      url: `/chat/${myId}`
+    }).catch(err => console.error('Chat push notification error:', err));
 
     res.status(201).json({ message: result.rows[0] });
   } catch (err) {

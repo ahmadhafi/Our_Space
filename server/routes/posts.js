@@ -9,6 +9,7 @@ const { body, param, query, validationResult } = require('express-validator');
 const { getDb } = require('../db/connection');
 const { authenticateToken } = require('../middleware/auth');
 const { upload, validateFileSizes, getMediaType } = require('../middleware/upload');
+const { sendPushToPartner } = require('../services/pushService');
 const { put, del } = require('@vercel/blob');
 const fs = require('fs');
 const path = require('path');
@@ -159,6 +160,12 @@ router.post('/',
       const post = postRes.rows[0];
 
       const mediaRes = await db.query('SELECT id, media_type, file_path, original_name FROM post_media WHERE post_id = $1', [postId]);
+
+      sendPushToPartner(req.user.id, {
+        title: 'Our Space 📸',
+        body: `${req.user.display_name || req.user.username} shared a new post`,
+        url: '/'
+      }).catch(err => console.error('Post push error:', err));
 
       res.status(201).json({
         post: {
@@ -317,6 +324,12 @@ router.post('/:id/comments',
         'INSERT INTO activity_logs (user_id, action_type, description, metadata, created_at) VALUES ($1, $2, $3, $4, $5)',
         [req.user.id, 'COMMENT_ADDED', `${req.user.username} commented on a post`, JSON.stringify({ post_id: postId, comment_id: Number(commentId) }), now]
       );
+
+      sendPushToPartner(req.user.id, {
+        title: 'Our Space 💬',
+        body: `${req.user.display_name || req.user.username}: ${text}`,
+        url: '/'
+      }).catch(err => console.error('Comment push error:', err));
 
       const commentRes = await db.query(`
         SELECT 

@@ -8,6 +8,7 @@ const router = express.Router();
 const { body, param, query, validationResult } = require('express-validator');
 const { getDb } = require('../db/connection');
 const { authenticateToken } = require('../middleware/auth');
+const { sendPushToPartner } = require('../services/pushService');
 
 const VALID_CATEGORIES = [
   'Food', 'Transport', 'Bills', 'Rent', 'Loan Payment', 'Credit Card', 'Insurance', 'Healthcare',
@@ -299,6 +300,14 @@ router.post('/',
         JOIN users u ON f.user_id = u.id
         WHERE f.id = $1
       `, [entryId]);
+
+      if (split_type === 'shared') {
+        sendPushToPartner(req.user.id, {
+          title: 'Our Space 💰',
+          body: `${req.user.display_name || req.user.username} recorded ${type}: ${formattedAmount} (${category})`,
+          url: '/finance'
+        }).catch(err => console.error('Finance push error:', err));
+      }
 
       res.status(201).json({ entry: entryRows[0] });
     } catch (err) {

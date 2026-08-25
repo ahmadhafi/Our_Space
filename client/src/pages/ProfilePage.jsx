@@ -2,10 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiGet, apiPut } from '../hooks/useApi';
 import { useAuth } from '../hooks/useAuth';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 import { compressImage } from '../hooks/useImageCompress';
 import { getMediaUrl } from '../utils/media';
 import ThemePicker from '../components/ThemePicker';
 import PostCard from '../components/PostCard';
+import IosInstallPrompt from '../components/IosInstallPrompt';
 
 export default function ProfilePage() {
   const { username: routeUsername } = useParams();
@@ -29,12 +31,16 @@ export default function ProfilePage() {
   const [avatarPreview, setAvatarPreview] = useState(null);
   const fileInputRef = useRef(null);
 
-  // Password change state
   const [changingPassword, setChangingPassword] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordError, setPasswordError] = useState('');
+
+  // Push Notifications & iOS Modal
+  const { isSupported, isSubscribed, subscribeUser, unsubscribeUser, sendTestNotification, loading: pushLoading, error: pushError } = usePushNotifications();
+  const [pushStatusMsg, setPushStatusMsg] = useState('');
+  const [showIosModal, setShowIosModal] = useState(false);
 
   const [posts, setPosts] = useState([]);
   const [postsLoading, setPostsLoading] = useState(false);
@@ -437,6 +443,91 @@ export default function ProfilePage() {
       {isOwner && (
         <PartnerLink currentUsername={user?.username} />
       )}
+
+      {/* Push Notifications & App Installation Controls */}
+      {isOwner && (
+        <div className="bg-[#181818] rounded-3xl p-5 border border-white/10 space-y-3.5 text-white shadow-lg">
+          <div className="flex items-center justify-between pb-2 border-b border-white/5">
+            <div className="flex items-center gap-2.5">
+              <span className="text-lg">🔔</span>
+              <div>
+                <h3 className="font-semibold text-sm text-white">Push Notifications</h3>
+                <p className="text-[11px] text-gray-400">Receive alerts for messages, posts, & finances</p>
+              </div>
+            </div>
+            <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
+              isSubscribed ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-white/10 text-gray-400'
+            }`}>
+              {isSubscribed ? 'Active' : 'Disabled'}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            {!isSubscribed ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  setPushStatusMsg('');
+                  const ok = await subscribeUser();
+                  if (ok) setPushStatusMsg('Push notifications enabled successfully!');
+                }}
+                disabled={pushLoading || !isSupported}
+                className="px-4 py-2 rounded-xl bg-white text-black font-semibold text-xs hover:bg-gray-200 transition-colors disabled:opacity-50"
+              >
+                {pushLoading ? 'Enabling...' : 'Enable Push Notifications'}
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setPushStatusMsg('Sending test notification...');
+                    const ok = await sendTestNotification();
+                    if (ok) setPushStatusMsg('Test notification sent! Check your notification bar.');
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-medium text-xs transition-colors"
+                >
+                  Send Test Push
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await unsubscribeUser();
+                    setPushStatusMsg('Unsubscribed from notifications.');
+                  }}
+                  className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium transition-colors"
+                >
+                  Turn Off
+                </button>
+              </>
+            )}
+
+            {/* iOS Install Prompt Button */}
+            <button
+              type="button"
+              onClick={() => setShowIosModal(true)}
+              className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white text-xs font-medium transition-colors ml-auto flex items-center gap-1.5 border border-white/5"
+            >
+              <span>📱 Install on iPhone / iPad</span>
+            </button>
+          </div>
+
+          {pushStatusMsg && (
+            <p className="text-xs text-emerald-400 bg-emerald-500/10 p-2 rounded-xl border border-emerald-500/20">
+              {pushStatusMsg}
+            </p>
+          )}
+
+          {pushError && (
+            <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-xl border border-red-500/20">
+              {pushError}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Forced iOS Install Guidance Modal */}
+      <IosInstallPrompt forceOpen={showIosModal} onCloseModal={() => setShowIosModal(false)} />
 
       {/* User's Posts */}
       <div className="mt-8 space-y-4">

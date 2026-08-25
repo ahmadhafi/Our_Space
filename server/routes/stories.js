@@ -3,6 +3,7 @@ const router = express.Router();
 const { getDb } = require('../db/connection');
 const { requireAuth } = require('../middleware/auth');
 const { upload } = require('../middleware/upload');
+const { sendPushToPartner } = require('../services/pushService');
 const { put } = require('@vercel/blob');
 const fs = require('fs');
 
@@ -87,6 +88,12 @@ router.post('/', requireAuth, upload.single('media'), async (req, res, next) => 
       INSERT INTO activity_logs (user_id, action_type, description)
       VALUES ($1, 'STORY_CREATED', 'added a new story')
     `, [user_id]);
+
+    sendPushToPartner(user_id, {
+      title: 'Our Space 🌟',
+      body: `${req.user.display_name || req.user.username} uploaded a new story`,
+      url: '/'
+    }).catch(err => console.error('Story push error:', err));
 
     res.status(201).json({ story: result.rows[0] });
   } catch (err) {
