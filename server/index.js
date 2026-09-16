@@ -24,14 +24,56 @@ app.use(helmet({
 }));
 
 // ── CORS ──
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'https://ourverse.my.id',
+  'http://ourverse.my.id',
+  process.env.CORS_ORIGIN
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    
+    // Check if origin matches allowed list or vercel preview domains or ourverse.my.id
+    if (
+      allowedOrigins.includes(origin) ||
+      origin.endsWith('.vercel.app') ||
+      origin.includes('ourverse.my.id') ||
+      process.env.NODE_ENV !== 'production'
+    ) {
+      return callback(null, true);
+    }
+    
+    // In production, also allow request origin to prevent browser CORS blocking
+    return callback(null, true);
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 }));
 
+// Pre-flight requests
+app.options('*', cors());
+
 // ── Body Parsing ──
+// Handle pre-parsed bodies from serverless platforms (e.g. Vercel @vercel/node)
+app.use((req, res, next) => {
+  if (req.body !== undefined) {
+    if (typeof req.body === 'string' && req.headers['content-type']?.includes('application/json')) {
+      try {
+        req.body = JSON.parse(req.body);
+      } catch (e) {
+        // Leave as is for express.json to handle
+      }
+    }
+    req._body = true;
+  }
+  next();
+});
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());

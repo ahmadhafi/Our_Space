@@ -9,7 +9,7 @@ const poolConfig = connectionString
   ? {
       connectionString,
       ssl: isCloud ? { rejectUnauthorized: false } : false,
-      max: 10,
+      max: process.env.VERCEL ? 3 : 10,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000
     }
@@ -23,6 +23,11 @@ const poolConfig = connectionString
     };
 
 const sql = new Pool(poolConfig);
+
+// Catch background idle client errors to prevent uncaught exceptions from terminating the process
+sql.on('error', (err) => {
+  console.error('[Postgres Pool Background Error]:', err.message);
+});
 
 const { initializeSchema } = require('./schema');
 

@@ -21,7 +21,12 @@ export default function LoginPage() {
       await login(username.trim(), password);
       navigate('/');
     } catch (err) {
-      setError(err.message || 'Login failed');
+      const msg = err.message || '';
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed')) {
+        setError('Cannot reach the server. Please verify your internet connection, or check if your domain/host is currently active.');
+      } else {
+        setError(msg || 'Login failed');
+      }
     } finally {
       setLoading(false);
     }
