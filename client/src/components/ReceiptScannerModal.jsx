@@ -10,6 +10,7 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
   const [scanResult, setScanResult] = useState(null);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [showRawText, setShowRawText] = useState(false);
 
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
@@ -21,16 +22,17 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
     setError('');
     setSuccessMsg('');
     setScanResult(null);
+    setShowRawText(false);
 
     try {
-      // Downscale image if large (e.g. mobile camera 12MP photos) to save memory
+      // Compress with high resolution ceiling so tall receipt lines remain crisp for OCR
       let fileToProcess = file;
-      if (file.size > 500 * 1024) {
+      if (file.size > 800 * 1024) {
         try {
           const imageCompression = (await import('browser-image-compression')).default;
           fileToProcess = await imageCompression(file, {
-            maxSizeMB: 0.6,
-            maxWidthOrHeight: 1200,
+            maxSizeMB: 1.2,
+            maxWidthOrHeight: 2400,
             useWebWorker: true
           });
         } catch (compErr) {
@@ -51,6 +53,8 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
 
           setScanResult({
             amount: result.amount || '',
+            allAmounts: result.allAmounts || [],
+            rawText: result.rawText || '',
             date: result.date || new Date().toISOString().split('T')[0],
             category: result.category || 'Food',
             note: result.note || 'Receipt Expense',
@@ -62,6 +66,8 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
           // Provide fallback fields so user is never blocked
           setScanResult({
             amount: '',
+            allAmounts: [],
+            rawText: '',
             date: new Date().toISOString().split('T')[0],
             category: 'Food',
             note: 'Receipt Expense',
@@ -256,6 +262,32 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
                         required
                       />
                     </div>
+
+                    {/* Candidate numbers detected on receipt */}
+                    {scanResult.allAmounts && scanResult.allAmounts.length > 1 && (
+                      <div className="mt-2 pt-2 border-t border-white/5 space-y-1">
+                        <span className="text-[10px] text-gray-400 block">Detected numbers on receipt (tap to select):</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {scanResult.allAmounts.map((amt) => {
+                            const isSelected = String(scanResult.amount) === String(amt);
+                            return (
+                              <button
+                                key={amt}
+                                type="button"
+                                onClick={() => setScanResult({ ...scanResult, amount: String(amt) })}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
+                                  isSelected
+                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold'
+                                    : 'bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10'
+                                }`}
+                              >
+                                Rp {Number(amt).toLocaleString('id-ID')}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Date & Category Grid */}
@@ -325,6 +357,24 @@ export default function ReceiptScannerModal({ isOpen, onClose, onEntrySaved, def
                       </button>
                     </div>
                   </div>
+
+                  {/* Raw OCR Text Accordion */}
+                  {scanResult.rawText && (
+                    <div className="pt-2 border-t border-white/5">
+                      <button
+                        type="button"
+                        onClick={() => setShowRawText(!showRawText)}
+                        className="text-[10px] text-gray-400 hover:text-white flex items-center gap-1 font-medium transition-colors"
+                      >
+                        <span>{showRawText ? '▼ Hide' : '▶ Show'} Recognized OCR Text ({scanResult.rawText.length} chars)</span>
+                      </button>
+                      {showRawText && (
+                        <pre className="mt-1.5 p-2.5 bg-black/60 rounded-xl text-[10px] text-gray-300 font-mono whitespace-pre-wrap max-h-36 overflow-y-auto border border-white/10">
+                          {scanResult.rawText}
+                        </pre>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 

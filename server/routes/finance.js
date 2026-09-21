@@ -192,40 +192,28 @@ router.get('/',
         }
       }
 
-      // Calculate 50/30/20 Breakdown
-      let spentNeeds = 0;
-      let spentWants = 0;
-      let spentSavings = 0;
-      Object.entries(categoryBreakdown).forEach(([cat, amt]) => {
-        const lower = cat.toLowerCase();
-        if (
-          lower.includes('food') || lower.includes('transport') || lower.includes('bill') || 
-          lower.includes('rent') || lower.includes('loan') || lower.includes('credit') || 
-          lower.includes('insurance') || lower.includes('health') || lower.includes('electric') || 
-          lower.includes('water') || lower.includes('internet') || lower.includes('phone') || 
-          lower.includes('gas') || lower.includes('fuel') || lower.includes('bensin') || 
-          lower.includes('grocery') || lower.includes('groceries') || lower.includes('pharmacy')
-        ) {
-          spentNeeds += amt;
-        } else if (
-          lower.includes('invest') || lower.includes('saving') || lower.includes('stock') || 
-          lower.includes('crypto') || lower.includes('gold') || lower.includes('deposit')
-        ) {
-          spentSavings += amt;
-        } else {
-          spentWants += amt;
-        }
-      });
+      // Calculate Zero-Based Budget (ZBB)
+      const categoryBudgetsList = budgetRows.filter(r => r.category !== 'Overall');
+      const categoryBudgetsTotal = categoryBudgetsList.reduce((sum, r) => sum + Number(r.amount), 0);
+      const totalBudgeted = categoryBudgetsTotal > 0 ? categoryBudgetsTotal : totalBudget;
+      const unallocated = totalIncome - totalBudgeted;
 
-      const rule503020 = {
-        needs: { spent: spentNeeds, target: totalIncome * 0.5 },
-        wants: { spent: spentWants, target: totalIncome * 0.3 },
-        savings: { spent: spentSavings, target: totalIncome * 0.2 }
+      const zeroBasedBudget = {
+        totalIncome,
+        totalBudgeted,
+        unallocated,
+        isBalanced: totalIncome > 0 && unallocated === 0,
+        isOverAllocated: unallocated < 0,
+        isUnderAllocated: unallocated > 0,
+        allocationPercentage: totalIncome > 0 ? Math.min(100, Math.round((totalBudgeted / totalIncome) * 100)) : 0,
+        totalExpense,
+        remainingToSpend: Math.max(0, totalBudgeted - totalExpense),
+        overspentAmount: totalExpense > totalBudgeted ? totalExpense - totalBudgeted : 0
       };
 
       res.json({
         month,
-        budget: totalBudget, // For backwards compatibility
+        budget: totalBudgeted,
         budgets,
         budgetList: budgetRows,
         settlement,
@@ -235,7 +223,7 @@ router.get('/',
           totalExpense,
           netBalance: totalIncome - totalExpense
         },
-        rule503020,
+        zeroBasedBudget,
         charts: {
           categoryBreakdown: categoryArray,
           weeklyComparison: weeklyArray
@@ -443,18 +431,217 @@ router.post('/budget',
 
     try {
       const db = getDb();
-      const { month, amount, category = 'Overall', type = 'shared' } = req.body;
+      const { month, amount, category = 'Food', type = 'shared' } = req.body;
       const user_id = type === 'personal' ? req.user.id : null;
 
-      await db.query(`
-        INSERT INTO finance_budgets (month, category, amount, type, user_id) 
-        VALUES ($1, $2, $3, $4, $5) 
-        ON CONFLICT(month, category, type, user_id) DO UPDATE SET amount = EXCLUDED.amount
-      `, [month, category, amount, type, user_id]);
+      // 1. Calculate dates for month range
+      const [year, mon] = month.split('-').map(Number);
+      const startDate = `${month}-01`;
+      const nextMon = mon === 12 ? 1 : mon + 1;
+      const nextYear = mon === 12 ? year + 1 : year;
+      const endDate = `${nextYear}-${String(nextMon).padStart(2, '0')}-01`;
+
+      // 2. Fetch total income for this month and view
+      let incomeQuery = '';
+      let incomeParams = [month, startDate, endDate];
+      if (type === 'personal') {
+        incomeQuery = `
+          SELECT COALESCE(SUM(amount), 0) as total_income 
+          FROM finance_entries 
+          WHERE (date LIKE $1 || '%' OR (date >= $2 AND date < $3)) 
+            AND type = 'income' 
+            AND (split_type = 'personal' OR split_type IS NULL) 
+            AND user_id = $4
+        `;
+        incomeParams.push(req.user.id);
+      } else {
+        incomeQuery = `
+          SELECT COALESCE(SUM(amount), 0) as total_income 
+          FROM finance_entries 
+          WHERE (date LIKE $1 || '%' OR (date >= $2 AND date < $3)) 
+            AND type = 'income' 
+            AND split_type = 'shared'
+        `;
+      }
+      const { rows: incomeRows } = await db.query(incomeQuery, incomeParams);
+      const totalIncome = parseInt(incomeRows[0]?.total_income || 0, 10);
+
+      // 3. Enforce that income must exist
+      if (totalIncome === 0) {
+        return res.status(400).json({
+          error: `No income has been recorded for ${month}. Please record your income (e.g. Salary, Bonus) first to set budget limits.`
+        });
+      }
+
+      // 4. Fetch already budgeted amount for OTHER categories
+      let budgetQuery = '';
+      let budgetParams = [month, category];
+      if (type === 'personal') {
+        budgetQuery = `
+          SELECT COALESCE(SUM(amount), 0) as other_budgeted
+          FROM finance_budgets
+          WHERE month = $1 AND category != $2 AND category != 'Overall' AND type = 'personal' AND user_id = $3
+        `;
+        budgetParams.push(req.user.id);
+      } else {
+        budgetQuery = `
+          SELECT COALESCE(SUM(amount), 0) as other_budgeted
+          FROM finance_budgets
+          WHERE month = $1 AND category != $2 AND category != 'Overall' AND type = 'shared'
+        `;
+      }
+      const { rows: budgetSumRows } = await db.query(budgetQuery, budgetParams);
+      const otherBudgeted = parseInt(budgetSumRows[0]?.other_budgeted || 0, 10);
+
+      // 5. Check if new budget exceeds available income
+      const availableForCategory = Math.max(0, totalIncome - otherBudgeted);
+      if (amount > availableForCategory) {
+        const formattedIncome = `Rp ${totalIncome.toLocaleString('id-ID')}`;
+        const formattedOther = `Rp ${otherBudgeted.toLocaleString('id-ID')}`;
+        const formattedAvail = `Rp ${availableForCategory.toLocaleString('id-ID')}`;
+        return res.status(400).json({
+          error: `Budget limit exceeded! Total budget cannot exceed your monthly income of ${formattedIncome}. You already budgeted ${formattedOther} across other categories, leaving ${formattedAvail} available for "${category}".`
+        });
+      }
+
+      // 6. Safe upsert
+      let existing;
+      if (type === 'personal') {
+        existing = await db.query(
+          'SELECT id FROM finance_budgets WHERE month = $1 AND category = $2 AND type = $3 AND user_id = $4',
+          [month, category, type, req.user.id]
+        );
+      } else {
+        existing = await db.query(
+          'SELECT id FROM finance_budgets WHERE month = $1 AND category = $2 AND type = $3 AND user_id IS NULL',
+          [month, category, type]
+        );
+      }
+
+      if (existing.rows.length > 0) {
+        await db.query('UPDATE finance_budgets SET amount = $1 WHERE id = $2', [amount, existing.rows[0].id]);
+      } else {
+        await db.query(
+          'INSERT INTO finance_budgets (month, category, amount, type, user_id) VALUES ($1, $2, $3, $4, $5)',
+          [month, category, amount, type, user_id]
+        );
+      }
 
       res.json({ message: 'Budget updated successfully', month, category, amount });
     } catch (err) {
       console.error('Update budget error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+// POST /api/finance/budget/copy-previous
+router.post('/budget/copy-previous',
+  [
+    body('month').matches(/^\d{4}-\d{2}$/).withMessage('Month must be YYYY-MM format'),
+    body('type').optional().isIn(VALID_SPLIT_TYPES).withMessage('Type must be personal or shared')
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: errors.array()[0].msg });
+    }
+
+    try {
+      const db = getDb();
+      const { month, type = 'shared' } = req.body;
+      const user_id = type === 'personal' ? req.user.id : null;
+
+      // Calculate previous month
+      const [year, mon] = month.split('-').map(Number);
+      const prevDate = new Date(year, mon - 2, 1);
+      const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+
+      // Fetch previous month budgets
+      let prevBudgetsQuery = 'SELECT category, amount FROM finance_budgets WHERE month = $1 AND type = $2';
+      let prevParams = [prevMonth, type];
+      if (type === 'personal') {
+        prevBudgetsQuery += ' AND user_id = $3';
+        prevParams.push(req.user.id);
+      } else {
+        prevBudgetsQuery += ' AND user_id IS NULL';
+      }
+
+      const { rows: prevBudgets } = await db.query(prevBudgetsQuery, prevParams);
+      if (!prevBudgets.length) {
+        return res.status(404).json({ error: `No budgets found in previous month (${prevMonth}) to copy.` });
+      }
+
+      // Verify income in current month
+      const startDate = `${month}-01`;
+      const nextMon = mon === 12 ? 1 : mon + 1;
+      const nextYear = mon === 12 ? year + 1 : year;
+      const endDate = `${nextYear}-${String(nextMon).padStart(2, '0')}-01`;
+
+      let incomeQuery = '';
+      let incomeParams = [month, startDate, endDate];
+      if (type === 'personal') {
+        incomeQuery = `
+          SELECT COALESCE(SUM(amount), 0) as total_income 
+          FROM finance_entries 
+          WHERE (date LIKE $1 || '%' OR (date >= $2 AND date < $3)) 
+            AND type = 'income' 
+            AND (split_type = 'personal' OR split_type IS NULL) 
+            AND user_id = $4
+        `;
+        incomeParams.push(req.user.id);
+      } else {
+        incomeQuery = `
+          SELECT COALESCE(SUM(amount), 0) as total_income 
+          FROM finance_entries 
+          WHERE (date LIKE $1 || '%' OR (date >= $2 AND date < $3)) 
+            AND type = 'income' 
+            AND split_type = 'shared'
+        `;
+      }
+      const { rows: incomeRows } = await db.query(incomeQuery, incomeParams);
+      const totalIncome = parseInt(incomeRows[0]?.total_income || 0, 10);
+
+      const totalPrevBudget = prevBudgets.reduce((s, b) => s + b.amount, 0);
+      if (totalIncome === 0) {
+        return res.status(400).json({
+          error: `No income recorded for ${month}. Please record income first before copying budgets.`
+        });
+      }
+      if (totalPrevBudget > totalIncome) {
+        return res.status(400).json({
+          error: `Cannot copy: Previous month budgets total Rp ${totalPrevBudget.toLocaleString('id-ID')}, which exceeds current month income of Rp ${totalIncome.toLocaleString('id-ID')}.`
+        });
+      }
+
+      let copiedCount = 0;
+      for (const b of prevBudgets) {
+        let existing;
+        if (type === 'personal') {
+          existing = await db.query(
+            'SELECT id FROM finance_budgets WHERE month = $1 AND category = $2 AND type = $3 AND user_id = $4',
+            [month, b.category, type, req.user.id]
+          );
+        } else {
+          existing = await db.query(
+            'SELECT id FROM finance_budgets WHERE month = $1 AND category = $2 AND type = $3 AND user_id IS NULL',
+            [month, b.category, type]
+          );
+        }
+        if (existing.rows.length > 0) {
+          await db.query('UPDATE finance_budgets SET amount = $1 WHERE id = $2', [b.amount, existing.rows[0].id]);
+        } else {
+          await db.query(
+            'INSERT INTO finance_budgets (month, category, amount, type, user_id) VALUES ($1, $2, $3, $4, $5)',
+            [month, b.category, b.amount, type, user_id]
+          );
+        }
+        copiedCount++;
+      }
+
+      res.json({ message: `Successfully copied ${copiedCount} category budgets from ${prevMonth}`, count: copiedCount });
+    } catch (err) {
+      console.error('Copy budget error:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   }

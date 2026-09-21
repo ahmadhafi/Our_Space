@@ -6,6 +6,18 @@ import { getCategoryColor, getCategoryIcon } from '../components/CategoryPickerM
 import ReceiptScannerModal from '../components/ReceiptScannerModal';
 import { useAuth } from '../hooks/useAuth';
 
+const EXPENSE_CATEGORIES = [
+  'Food', 'Groceries', 'Restaurant', 'Cafe & Coffee',
+  'Transport', 'Fuel & Bensin', 'Vehicle Maintenance',
+  'Bills', 'Rent', 'Electricity Bill', 'Internet Bill', 'Water Bill', 'Phone Bill',
+  'Shopping', 'Personal Items', 'Makeup & Skincare', 'Houseware', 'Electronics',
+  'Entertainment', 'Streaming Service', 'Games',
+  'Healthcare', 'Pharmacy', 'Fitness & Gym',
+  'Education', 'Books',
+  'Investment', 'Savings',
+  'Other', 'Gifts & Donations'
+];
+
 const formatRp = (amount) => {
   return `Rp ${Number(amount || 0).toLocaleString('id-ID')}`;
 };
@@ -39,8 +51,10 @@ export default function FinancePage() {
   const [editingGoalId, setEditingGoalId] = useState(null);
   const [editGoalInput, setEditGoalInput] = useState({ title: '', target_amount: '', deadline: '' });
   const [budgetInput, setBudgetInput] = useState('');
-  const [budgetCategory, setBudgetCategory] = useState('Overall');
+  const [budgetCategory, setBudgetCategory] = useState('Food');
   const [showBudgetForm, setShowBudgetForm] = useState(false);
+  const [budgetError, setBudgetError] = useState('');
+  const [copyingBudget, setCopyingBudget] = useState(false);
   const [goals, setGoals] = useState([]);
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [goalInput, setGoalInput] = useState({ title: '', target_amount: '' });
@@ -138,13 +152,38 @@ export default function FinancePage() {
   const handleSetBudget = async (e) => {
     e.preventDefault();
     if (!budgetInput) return;
+    setBudgetError('');
     try {
-      await apiPost('/api/finance/budget', { month, amount: parseInt(budgetInput, 10), category: budgetCategory, type: view === 'all' ? 'shared' : view });
+      await apiPost('/api/finance/budget', { 
+        month, 
+        amount: parseInt(budgetInput, 10), 
+        category: budgetCategory, 
+        type: view === 'all' ? 'shared' : view 
+      });
       setShowBudgetForm(false);
       setBudgetInput('');
+      setBudgetError('');
       fetchData();
     } catch (err) {
-      alert(err.message);
+      setBudgetError(err.message || 'Failed to update budget');
+    }
+  };
+
+  const handleCopyPreviousBudget = async () => {
+    if (!confirm('Copy category budgets from the previous month?')) return;
+    setBudgetError('');
+    try {
+      setCopyingBudget(true);
+      const res = await apiPost('/api/finance/budget/copy-previous', {
+        month,
+        type: view === 'all' ? 'shared' : view
+      });
+      alert(res.message || 'Budgets copied successfully!');
+      fetchData();
+    } catch (err) {
+      alert(err.message || 'Failed to copy previous budgets');
+    } finally {
+      setCopyingBudget(false);
     }
   };
 
@@ -288,8 +327,182 @@ export default function FinancePage() {
     };
   };
 
+  const getMonthPacingInfo = () => {
+    const [y, m] = month.split('-').map(Number);
+    const now = new Date();
+    const isCurrentMonth = now.getFullYear() === y && now.getMonth() + 1 === m;
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const dayOfMonth = isCurrentMonth ? Math.min(now.getDate(), daysInMonth) : daysInMonth;
+    const daysRemaining = Math.max(1, daysInMonth - dayOfMonth);
+    const monthProgress = Math.round((dayOfMonth / daysInMonth) * 100);
+    return { isCurrentMonth, daysInMonth, dayOfMonth, daysRemaining, monthProgress };
+  };
+
+  const getFinancialReviews = () => {
+    const reviews = [];
+    const totalIncome = Number(data?.summary?.totalIncome || 0);
+    const totalExpense = Number(data?.summary?.totalExpense || 0);
+    const totalBudgeted = Number(data?.zeroBasedBudget?.totalBudgeted || data?.budget || 0);
+    const unallocated = totalIncome - totalBudgeted;
+    const { daysRemaining, monthProgress } = getMonthPacingInfo();
+    const budgetSpentPct = totalBudgeted > 0 ? Math.round((totalExpense / totalBudgeted) * 100) : 0;
+
+    // 1. Pacing & Velocity Review
+    if (totalBudgeted > 0) {
+      const remainingBudget = Math.max(0, totalBudgeted - totalExpense);
+      const dailySafe = Math.floor(remainingBudget / daysRemaining);
+
+      if (totalExpense > totalBudgeted) {
+        reviews.push({
+          type: 'warning',
+          icon: '🚨',
+          title: 'Budget Exceeded',
+          badge: 'Over Budget',
+          description: `Total expenses exceed your budgeted amount by ${formatRp(totalExpense - totalBudgeted)}.`,
+          recommendation: 'Pause all non-essential purchases for the rest of the month and adjust category limits.'
+        });
+      } else if (budgetSpentPct > monthProgress + 15) {
+        reviews.push({
+          type: 'warning',
+          icon: '⚡',
+          title: 'High Spending Velocity',
+          badge: 'Burn Rate Alert',
+          description: `You have spent ${budgetSpentPct}% of your budget, but only ${monthProgress}% of the month has passed (${daysRemaining} days left).`,
+          recommendation: `Recommended spending limit to finish within budget: ${formatRp(dailySafe)}/day.`
+        });
+      } else {
+        reviews.push({
+          type: 'good',
+          icon: '🎯',
+          title: 'Healthy Spending Pace',
+          badge: 'On Track',
+          description: `You have used ${budgetSpentPct}% of your budget while ${monthProgress}% of the month has elapsed. Excellent pacing!`,
+          recommendation: `Safe daily spending allowance: ${formatRp(dailySafe)}/day.`
+        });
+      }
+    }
+
+    // 2. Zero-Based Budgeting Allocation Review
+    if (totalIncome > 0) {
+      if (unallocated > 0) {
+        reviews.push({
+          type: 'tip',
+          icon: '💰',
+          title: 'Unallocated Income',
+          badge: 'ZBB Opportunity',
+          description: `You have ${formatRp(unallocated)} of monthly income that has not been assigned a job yet.`,
+          recommendation: 'In Zero-Based Budgeting, give every Rupiah a purpose by assigning this to a Savings Goal or Emergency Reserve.'
+        });
+      } else if (unallocated < 0) {
+        reviews.push({
+          type: 'warning',
+          icon: '⚠️',
+          title: 'Budget Exceeds Income',
+          badge: 'Over-allocated',
+          description: `Category budgets total ${formatRp(totalBudgeted)}, which is ${formatRp(Math.abs(unallocated))} higher than your actual income.`,
+          recommendation: 'Reduce category budgets so that total allocations do not exceed your earnings.'
+        });
+      } else {
+        reviews.push({
+          type: 'good',
+          icon: '✨',
+          title: '100% Balanced Budget',
+          badge: 'ZBB Achieved',
+          description: 'Every single Rupiah of your income is assigned to a category budget! Zero money is leaking unaccounted.',
+          recommendation: 'Stick to your category limits to maintain full financial control.'
+        });
+      }
+    } else {
+      reviews.push({
+        type: 'tip',
+        icon: '💵',
+        title: 'Add Income to Enable Zero-Based Budgeting',
+        badge: 'Setup Tip',
+        description: 'Zero-Based Budgeting works by budgeting every Rupiah of your actual income down to zero.',
+        recommendation: 'Record your monthly salary or earnings in Transactions to unlock full income-bound budgeting.'
+      });
+    }
+
+    // 3. Category Optimization Reviews
+    if (totalExpense > 0 && Array.isArray(data?.entries)) {
+      const catTotals = {};
+      data.entries.filter(e => e.type === 'expense').forEach(e => {
+        catTotals[e.category] = (catTotals[e.category] || 0) + Number(e.amount || 0);
+      });
+
+      // Check Food & Dining
+      const foodAmt = (catTotals['Food'] || 0) + (catTotals['Groceries'] || 0) + (catTotals['Restaurant'] || 0) + (catTotals['Cafe & Coffee'] || 0);
+      const foodPct = Math.round((foodAmt / totalExpense) * 100);
+      if (foodPct > 35 && foodAmt > 500000) {
+        const potentialSavings = Math.round(foodAmt * 0.15);
+        reviews.push({
+          type: 'tip',
+          icon: '🍱',
+          title: 'Food & Dining Optimization',
+          badge: `${foodPct}% of Spent`,
+          description: `Food & beverage accounts for ${formatRp(foodAmt)} (${foodPct}% of your total spending).`,
+          recommendation: `Cooking at home or reducing 2 dining-out orders per week could save ~${formatRp(potentialSavings)} this month.`
+        });
+      }
+
+      // Check Discretionary (Shopping & Entertainment)
+      const discAmt = (catTotals['Shopping'] || 0) + (catTotals['Entertainment'] || 0) + (catTotals['Personal Items'] || 0);
+      const discPct = Math.round((discAmt / totalExpense) * 100);
+      if (discPct > 25 && discAmt > 300000) {
+        reviews.push({
+          type: 'tip',
+          icon: '🛍️',
+          title: 'Discretionary Spending Review',
+          badge: `${discPct}% of Spent`,
+          description: `Shopping & entertainment make up ${formatRp(discAmt)} (${discPct}% of total expenses).`,
+          recommendation: 'Use the 48-hour rule: wait 2 full days before buying non-essential items to curb impulse spending.'
+        });
+      }
+
+      // Check Bills & Utilities
+      const billsAmt = (catTotals['Bills'] || 0) + (catTotals['Internet Bill'] || 0) + (catTotals['Electricity Bill'] || 0) + (catTotals['Water Bill'] || 0);
+      if (billsAmt > 0) {
+        reviews.push({
+          type: 'tip',
+          icon: '🧾',
+          title: 'Recurring Bills & Utilities',
+          badge: 'Fixed Costs',
+          description: `Recurring bills and utilities total ${formatRp(billsAmt)}.`,
+          recommendation: 'Audit active streaming subscriptions and turn off appliances when not in use.'
+        });
+      }
+    }
+
+    // 4. Month-over-Month Review
+    if (monthComp.previousSpent > 0) {
+      if (monthComp.isDecrease) {
+        reviews.push({
+          type: 'good',
+          icon: '📉',
+          title: 'Spending Down vs Last Month',
+          badge: `${Math.abs(monthComp.diffPercent)}% Less`,
+          description: `Great job! Spending is down ${Math.abs(monthComp.diffPercent)}% compared to the same period last month.`,
+          recommendation: 'Direct any end-of-month surplus straight into your savings goals!'
+        });
+      } else if (monthComp.diffPercent > 20) {
+        reviews.push({
+          type: 'warning',
+          icon: '📈',
+          title: 'Spending Up vs Last Month',
+          badge: `+${monthComp.diffPercent}% More`,
+          description: `Spending has increased by ${monthComp.diffPercent}% compared to last month (${formatRp(monthComp.currentSpent)} vs ${formatRp(monthComp.previousSpent)}).`,
+          recommendation: 'Review your largest transactions in Top Spending to identify what drove the sudden cost increase.'
+        });
+      }
+    }
+
+    return reviews;
+  };
+
   const monthComp = getMonthComparison();
   const topSpendings = getTopSpendings();
+  const pacingInfo = getMonthPacingInfo();
+  const financialReviews = getFinancialReviews();
 
   if (loading) {
     return (
@@ -625,104 +838,222 @@ export default function FinancePage() {
       {activeTab === 'planning' && (
         <div className="space-y-4">
           
-          {/* 50/30/20 Rule Card */}
-          {data?.rule503020 && (
-            <div className="bg-[#121212] rounded-2xl p-4 border border-white/10 shadow-sm space-y-3">
-              <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">50 / 30 / 20 Budget Target</span>
-                <span className="text-[11px] text-emerald-400 font-medium">Income Guide</span>
+          {/* Zero-Based Budgeting (ZBB) Card */}
+          <div className="bg-[#121212] rounded-2xl p-5 border border-white/10 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-white/5 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">Zero-Based Budgeting</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-gray-300 font-medium">
+                    Every Rupiah has a job
+                  </span>
+                </div>
+                <p className="text-[11px] text-gray-400 mt-0.5">
+                  Allocate 100% of your income to category budgets until unallocated is IDR 0.
+                </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-                {/* Needs */}
-                <div className="bg-white/[0.02] rounded-xl p-3 border border-white/5 space-y-1">
-                  <div className="flex justify-between text-gray-400 text-[11px]">
-                    <span>Needs (50%)</span>
-                    <span>{displayAmount(data.rule503020.needs?.target || 0)}</span>
-                  </div>
-                  <p className="text-sm font-semibold text-white">{displayAmount(data.rule503020.needs?.spent || 0)}</p>
-                  <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
-                    <div 
-                      className="bg-blue-400 h-full rounded-full"
-                      style={{ width: `${Math.min(100, Math.round(((data.rule503020.needs?.spent || 0) / (data.rule503020.needs?.target || 1)) * 100))}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Wants */}
-                <div className="bg-white/[0.02] rounded-xl p-3 border border-white/5 space-y-1">
-                  <div className="flex justify-between text-gray-400 text-[11px]">
-                    <span>Wants (30%)</span>
-                    <span>{displayAmount(data.rule503020.wants?.target || 0)}</span>
-                  </div>
-                  <p className="text-sm font-semibold text-white">{displayAmount(data.rule503020.wants?.spent || 0)}</p>
-                  <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
-                    <div 
-                      className="bg-purple-400 h-full rounded-full"
-                      style={{ width: `${Math.min(100, Math.round(((data.rule503020.wants?.spent || 0) / (data.rule503020.wants?.target || 1)) * 100))}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Savings */}
-                <div className="bg-white/[0.02] rounded-xl p-3 border border-white/5 space-y-1">
-                  <div className="flex justify-between text-gray-400 text-[11px]">
-                    <span>Savings (20%)</span>
-                    <span>{displayAmount(data.rule503020.savings?.target || 0)}</span>
-                  </div>
-                  <p className="text-sm font-semibold text-white">{displayAmount(data.rule503020.savings?.spent || 0)}</p>
-                  <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
-                    <div 
-                      className="bg-emerald-400 h-full rounded-full"
-                      style={{ width: `${Math.min(100, Math.round(((data.rule503020.savings?.spent || 0) / (data.rule503020.savings?.target || 1)) * 100))}%` }}
-                    />
-                  </div>
-                </div>
+              <div>
+                {Number(data?.summary?.totalIncome || 0) === 0 ? (
+                  <span className="px-3 py-1 rounded-full text-xs font-semibold bg-gray-500/20 text-gray-300 border border-gray-500/30 flex items-center gap-1.5">
+                    <span>⚪</span> No Income Recorded
+                  </span>
+                ) : Number(data?.zeroBasedBudget?.unallocated ?? (Number(data?.summary?.totalIncome || 0) - Number(data?.zeroBasedBudget?.totalBudgeted || data?.budget || 0))) === 0 ? (
+                  <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5">
+                    <span>✓</span> Balanced (Goal Met: IDR 0 Left)
+                  </span>
+                ) : Number(data?.zeroBasedBudget?.unallocated ?? (Number(data?.summary?.totalIncome || 0) - Number(data?.zeroBasedBudget?.totalBudgeted || data?.budget || 0))) > 0 ? (
+                  <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1.5">
+                    <span>⏳</span> {displayAmount(data?.zeroBasedBudget?.unallocated ?? (Number(data?.summary?.totalIncome || 0) - Number(data?.zeroBasedBudget?.totalBudgeted || data?.budget || 0)))} Left to Allocate
+                  </span>
+                ) : (
+                  <span className="px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1.5">
+                    <span>⚠️</span> Over-allocated by {displayAmount(Math.abs(data?.zeroBasedBudget?.unallocated ?? (Number(data?.summary?.totalIncome || 0) - Number(data?.zeroBasedBudget?.totalBudgeted || data?.budget || 0))))}
+                  </span>
+                )}
               </div>
             </div>
-          )}
+
+            {/* Visual Allocation Bar */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs text-gray-400">
+                <span>Income Allocation</span>
+                <span className="font-semibold text-white">
+                  {Number(data?.summary?.totalIncome || 0) > 0 
+                    ? Math.min(100, Math.round((Number(data?.zeroBasedBudget?.totalBudgeted || data?.budget || 0) / Number(data?.summary?.totalIncome || 1)) * 100)) 
+                    : 0}% Allocated
+                </span>
+              </div>
+              <div className="w-full bg-white/5 h-2.5 rounded-full overflow-hidden flex">
+                {Number(data?.summary?.totalIncome || 0) > 0 && (data?.budgetList || []).filter(b => b.category !== 'Overall').map((b, idx) => {
+                  const catShare = Math.min(100, Math.max(0, (Number(b.amount) / Number(data?.summary?.totalIncome || 1)) * 100));
+                  if (catShare <= 0) return null;
+                  return (
+                    <div
+                      key={b.id || idx}
+                      style={{ width: `${catShare}%`, backgroundColor: getCategoryColor(b.category) }}
+                      className="h-full first:rounded-l-full transition-all duration-300 relative group"
+                      title={`${b.category}: ${displayAmount(b.amount)} (${Math.round(catShare)}%)`}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Metrics Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs pt-1">
+              <div className="bg-white/[0.02] rounded-xl p-3 border border-white/5">
+                <span className="text-[10px] text-gray-400 uppercase tracking-wider block mb-0.5">Total Income</span>
+                <span className="text-sm font-bold text-emerald-400">{displayAmount(data?.summary?.totalIncome || 0)}</span>
+              </div>
+              <div className="bg-white/[0.02] rounded-xl p-3 border border-white/5">
+                <span className="text-[10px] text-gray-400 uppercase tracking-wider block mb-0.5">Total Budgeted</span>
+                <span className="text-sm font-bold text-white">{displayAmount(data?.zeroBasedBudget?.totalBudgeted || data?.budget || 0)}</span>
+              </div>
+              <div className="bg-white/[0.02] rounded-xl p-3 border border-white/5">
+                <span className="text-[10px] text-gray-400 uppercase tracking-wider block mb-0.5">Left to Allocate</span>
+                <span className={`text-sm font-bold ${
+                  (data?.zeroBasedBudget?.unallocated ?? 0) === 0 ? 'text-emerald-400' : ((data?.zeroBasedBudget?.unallocated ?? 0) > 0 ? 'text-amber-300' : 'text-rose-400')
+                }`}>
+                  {displayAmount(data?.zeroBasedBudget?.unallocated ?? (Number(data?.summary?.totalIncome || 0) - Number(data?.zeroBasedBudget?.totalBudgeted || data?.budget || 0)))}
+                </span>
+              </div>
+              <div className="bg-white/[0.02] rounded-xl p-3 border border-white/5">
+                <span className="text-[10px] text-gray-400 uppercase tracking-wider block mb-0.5">Remaining to Spend</span>
+                <span className="text-sm font-bold text-blue-400">
+                  {displayAmount(Math.max(0, Number(data?.zeroBasedBudget?.totalBudgeted || data?.budget || 0) - Number(data?.summary?.totalExpense || 0)))}
+                </span>
+              </div>
+            </div>
+
+            {/* Pacing Widget */}
+            {Number(data?.zeroBasedBudget?.totalBudgeted || data?.budget || 0) > 0 && pacingInfo.daysRemaining > 0 && (
+              <div className="flex items-center justify-between bg-white/[0.03] rounded-xl px-3.5 py-2.5 border border-white/5 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">📅</span>
+                  <div>
+                    <span className="text-gray-300 font-medium">Daily Safe-to-Spend:</span>
+                    <span className="text-gray-500 ml-1.5 text-[11px]">({pacingInfo.daysRemaining} days left in month)</span>
+                  </div>
+                </div>
+                <span className="font-bold text-white text-sm">
+                  {displayAmount(Math.max(0, Math.floor((Number(data?.zeroBasedBudget?.totalBudgeted || data?.budget || 0) - Number(data?.summary?.totalExpense || 0)) / pacingInfo.daysRemaining)))} / day
+                </span>
+              </div>
+            )}
+          </div>
 
           {/* Category Budgets */}
           <div className="bg-[#121212] rounded-2xl p-4 border border-white/10 shadow-sm space-y-3">
             <div className="flex items-center justify-between border-b border-white/5 pb-2">
-              <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Budgets</span>
-              <button
-                onClick={() => setShowBudgetForm(!showBudgetForm)}
-                className="text-xs text-white font-medium hover:underline"
-              >
-                {showBudgetForm ? 'Cancel' : '+ Add Budget'}
-              </button>
+              <div>
+                <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Category Budgets</span>
+                <p className="text-[10px] text-gray-500">Set limits bounded by your total monthly income</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyPreviousBudget}
+                  disabled={copyingBudget}
+                  className="text-xs text-gray-400 hover:text-white transition-colors"
+                  title="Copy category budgets from the previous month"
+                >
+                  {copyingBudget ? 'Copying...' : '↻ Copy Last Month'}
+                </button>
+                <span className="text-gray-600">•</span>
+                <button
+                  onClick={() => { setShowBudgetForm(!showBudgetForm); setBudgetError(''); }}
+                  className="text-xs text-white font-medium hover:underline"
+                >
+                  {showBudgetForm ? 'Cancel' : '+ Add Budget'}
+                </button>
+              </div>
             </div>
 
-            {showBudgetForm && (
-              <form onSubmit={handleSetBudget} className="p-3 bg-white/[0.02] rounded-xl border border-white/5 space-y-2.5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <input
-                    type="text"
-                    value={budgetCategory}
-                    onChange={(e) => setBudgetCategory(e.target.value)}
-                    placeholder="Category (e.g. Food or Overall)"
-                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white"
-                    required
-                  />
-                  <input
-                    type="number"
-                    value={budgetInput}
-                    onChange={(e) => setBudgetInput(e.target.value)}
-                    placeholder="Budget limit (IDR)"
-                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white"
-                    min="1"
-                    required
-                  />
-                </div>
-                <button type="submit" className="w-full py-1.5 bg-white text-black font-semibold rounded-lg text-xs">
-                  Save Budget
-                </button>
-              </form>
-            )}
+            {showBudgetForm && (() => {
+              const totalIncomeAmt = Number(data?.summary?.totalIncome || 0);
+              const otherBudgetsTotal = (data?.budgetList || [])
+                .filter(b => b.category !== budgetCategory && b.category !== 'Overall')
+                .reduce((s, b) => s + Number(b.amount || 0), 0);
+              const maxAvailableForCat = Math.max(0, totalIncomeAmt - otherBudgetsTotal);
+              const isOverLimit = Number(budgetInput || 0) > maxAvailableForCat;
+
+              return (
+                <form onSubmit={handleSetBudget} className="p-3.5 bg-white/[0.02] rounded-xl border border-white/5 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] text-gray-400 block mb-1">Expense Category</label>
+                      <select
+                        value={budgetCategory}
+                        onChange={(e) => { setBudgetCategory(e.target.value); setBudgetError(''); }}
+                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                      >
+                        {EXPENSE_CATEGORIES.map(cat => (
+                          <option key={cat} value={cat}>
+                            {getCategoryIcon(cat)} {cat}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-gray-400 block mb-1">
+                        Budget Limit (IDR)
+                        <span className="text-gray-500 font-normal ml-1">
+                          (Max available: {displayAmount(maxAvailableForCat)})
+                        </span>
+                      </label>
+                      <input
+                        type="number"
+                        value={budgetInput}
+                        onChange={(e) => { setBudgetInput(e.target.value); setBudgetError(''); }}
+                        placeholder={`e.g. ${maxAvailableForCat > 0 ? maxAvailableForCat : 1000000}`}
+                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white font-semibold focus:outline-none focus:border-white/30"
+                        min="1"
+                        max={maxAvailableForCat > 0 ? maxAvailableForCat : undefined}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Dynamic allocation capacity overview */}
+                  <div className="flex flex-wrap items-center justify-between text-[11px] px-1 text-gray-400">
+                    <span>Monthly Income: <strong className="text-emerald-400">{displayAmount(totalIncomeAmt)}</strong></span>
+                    <span>Other Budgets: <strong className="text-white">{displayAmount(otherBudgetsTotal)}</strong></span>
+                    <span>Max for {budgetCategory}: <strong className="text-white">{displayAmount(maxAvailableForCat)}</strong></span>
+                  </div>
+
+                  {isOverLimit && (
+                    <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300">
+                      ⚠️ Total budget cannot exceed your income ({displayAmount(totalIncomeAmt)}). You can allocate at most {displayAmount(maxAvailableForCat)} for {budgetCategory}.
+                    </div>
+                  )}
+
+                  {totalIncomeAmt === 0 && (
+                    <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
+                      ⚠️ No income recorded yet for this month. Please record your income (Salary, Bonus) in Transactions first.
+                    </div>
+                  )}
+
+                  {budgetError && (
+                    <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300">
+                      {budgetError}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={isOverLimit || totalIncomeAmt === 0}
+                    className="w-full py-2 bg-white hover:bg-gray-200 disabled:opacity-40 text-black font-semibold rounded-lg text-xs transition-colors"
+                  >
+                    Save Budget
+                  </button>
+                </form>
+              );
+            })()}
 
             {data?.budgetList?.length === 0 ? (
-              <p className="text-center py-4 text-xs text-gray-500">No category budgets set.</p>
+              <p className="text-center py-4 text-xs text-gray-500">No category budgets set for this month.</p>
             ) : (
               <div className="space-y-2">
                 {data?.budgetList?.map(b => {
@@ -730,6 +1061,7 @@ export default function FinancePage() {
                     ? data?.summary?.totalExpense || 0
                     : data?.entries?.filter(e => e.type === 'expense' && e.category === b.category).reduce((s, e) => s + (Number(e.amount) || 0), 0) || 0;
                   const pct = Math.round((spent / (Number(b.amount) || 1)) * 100);
+                  const isOver = spent > Number(b.amount);
 
                   return (
                     <div key={b.id} className="p-3 bg-white/[0.02] rounded-xl border border-white/5 space-y-1.5">
@@ -737,17 +1069,24 @@ export default function FinancePage() {
                         <div className="flex items-center gap-1.5">
                           <span>{getCategoryIcon(b.category)}</span>
                           <span className="font-medium text-white">{b.category}</span>
+                          {isOver && (
+                            <span className="text-[9px] px-1.5 py-0.2 bg-rose-500/20 text-rose-300 rounded font-semibold">
+                              Overbudget
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 text-xs">
-                          <span className="text-gray-400">{displayAmount(spent)} / {displayAmount(b.amount)}</span>
-                          <button onClick={() => handleDeleteBudget(b.id)} className="text-red-400 hover:text-red-300">
+                          <span className={isOver ? 'text-rose-400 font-semibold' : 'text-gray-400'}>
+                            {displayAmount(spent)} / {displayAmount(b.amount)}
+                          </span>
+                          <button onClick={() => handleDeleteBudget(b.id)} className="text-red-400 hover:text-red-300 ml-1" title="Delete budget">
                             ✕
                           </button>
                         </div>
                       </div>
                       <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
                         <div 
-                          className={`h-full rounded-full ${pct > 100 ? 'bg-rose-500' : 'bg-white'}`}
+                          className={`h-full rounded-full transition-all duration-300 ${isOver ? 'bg-rose-500' : 'bg-emerald-400'}`}
                           style={{ width: `${Math.min(100, pct)}%` }}
                         />
                       </div>
@@ -871,14 +1210,82 @@ export default function FinancePage() {
       {activeTab === 'reports' && (
         <div className="space-y-4">
           
-          {/* Category Breakdown */}
+          {/* 1. Financial Review & Smart Expense Recommendations ("Spend Wisely") */}
+          <div className="bg-[#121212] rounded-2xl p-5 border border-white/10 shadow-sm space-y-3.5">
+            <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="text-base">💡</span>
+                <div>
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">Financial Review & Recommendations</span>
+                  <p className="text-[11px] text-gray-400">Actionable advice to optimize your spending and spend wisely</p>
+                </div>
+              </div>
+              <span className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
+                Spend Wisely
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {financialReviews.map((item, idx) => (
+                <div 
+                  key={idx} 
+                  className={`p-3.5 rounded-xl border space-y-1.5 transition-all ${
+                    item.type === 'warning' 
+                      ? 'bg-rose-500/5 border-rose-500/20' 
+                      : item.type === 'tip'
+                      ? 'bg-amber-500/5 border-amber-500/20'
+                      : 'bg-emerald-500/5 border-emerald-500/20'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{item.icon}</span>
+                      <h4 className="text-xs font-bold text-white">{item.title}</h4>
+                    </div>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase ${
+                      item.type === 'warning' 
+                        ? 'bg-rose-500/20 text-rose-300' 
+                        : item.type === 'tip'
+                        ? 'bg-amber-500/20 text-amber-300'
+                        : 'bg-emerald-500/20 text-emerald-300'
+                    }`}>
+                      {item.badge}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-300 leading-relaxed">{item.description}</p>
+                  {item.recommendation && (
+                    <div className="pt-1 text-[11px] text-gray-400 flex items-start gap-1.5">
+                      <span className="text-emerald-400 font-bold">Tip:</span>
+                      <span>{item.recommendation}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 2. Category Breakdown Pie Chart */}
           <div className="bg-[#121212] rounded-2xl p-4 border border-white/10 shadow-sm space-y-3">
-            <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Category Breakdown</span>
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Category Breakdown</span>
+                <p className="text-[10px] text-gray-500">Tap any pie slice to inspect detailed expenses</p>
+              </div>
+              {selectedCategory && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategory(null)}
+                  className="text-xs text-gray-400 hover:text-white underline"
+                >
+                  Clear Selection
+                </button>
+              )}
+            </div>
             
             {(!data?.charts?.categoryBreakdown || data.charts.categoryBreakdown.length === 0) ? (
               <p className="text-center py-6 text-xs text-gray-500">No expense breakdown data available.</p>
             ) : (
-              <div className="h-56 w-full">
+              <div className="h-60 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -886,17 +1293,33 @@ export default function FinancePage() {
                       cx="50%"
                       cy="50%"
                       innerRadius={50}
-                      outerRadius={75}
+                      outerRadius={80}
                       paddingAngle={3}
                       dataKey="value"
+                      onClick={(entry) => setSelectedCategory(selectedCategory === entry.name ? null : entry.name)}
+                      className="cursor-pointer"
                     >
                       {data.charts.categoryBreakdown.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={getCategoryColor(entry.name)} />
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={getCategoryColor(entry.name)} 
+                          className="cursor-pointer hover:opacity-85 transition-opacity"
+                          stroke={selectedCategory === entry.name ? '#ffffff' : 'none'}
+                          strokeWidth={selectedCategory === entry.name ? 2 : 0}
+                        />
                       ))}
                     </Pie>
                     <Tooltip 
                       formatter={(val) => [formatRp(val), 'Amount']}
-                      contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '8px', fontSize: '11px' }}
+                      contentStyle={{ 
+                        backgroundColor: '#181a20', 
+                        border: '1px solid #444', 
+                        borderRadius: '8px', 
+                        fontSize: '11px',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.6)'
+                      }}
+                      itemStyle={{ color: '#ffffff', fontWeight: 600 }}
+                      labelStyle={{ color: '#ffffff', fontWeight: 700 }}
                     />
                     <Legend />
                   </PieChart>
@@ -905,7 +1328,137 @@ export default function FinancePage() {
             )}
           </div>
 
-          {/* Monthly Trend */}
+          {/* 3. High-Contrast Category Expense Detail Card (Visible on Dark Background) */}
+          {selectedCategory && (() => {
+            const catTransactions = (data?.entries || []).filter(
+              e => e.type === 'expense' && (e.category || '').toLowerCase() === selectedCategory.toLowerCase()
+            );
+            const catSpent = catTransactions.reduce((s, e) => s + Number(e.amount || 0), 0);
+            const catBudget = Number(data?.budgets?.[selectedCategory] || 0);
+            const totalExp = Number(data?.summary?.totalExpense || 1);
+            const catPercentage = Math.round((catSpent / totalExp) * 100);
+            const isOverBudget = catBudget > 0 && catSpent > catBudget;
+
+            return (
+              <div className="bg-[#1c1e28] rounded-2xl p-5 border-2 border-white/20 shadow-2xl space-y-4 animate-fade-in relative overflow-hidden">
+                {/* Category Accent Color Banner */}
+                <div 
+                  className="absolute top-0 left-0 right-0 h-1.5"
+                  style={{ backgroundColor: getCategoryColor(selectedCategory) }}
+                />
+
+                {/* Header */}
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div 
+                      className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl bg-white/10 border border-white/15 shadow-md"
+                      style={{ borderColor: `${getCategoryColor(selectedCategory)}80` }}
+                    >
+                      {getCategoryIcon(selectedCategory)}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-base text-white">{selectedCategory}</h3>
+                        <span 
+                          className="text-[10px] px-2.5 py-0.5 rounded-full font-bold text-white shadow-sm"
+                          style={{ backgroundColor: getCategoryColor(selectedCategory) }}
+                        >
+                          {catPercentage}% of Expenses
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-300 mt-0.5">
+                        {catTransactions.length} transaction{catTransactions.length !== 1 ? 's' : ''} in {getMonthLabel()}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCategory(null)}
+                    className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-semibold transition-colors shadow-sm"
+                  >
+                    ✕ Close Details
+                  </button>
+                </div>
+
+                {/* Spending vs Category Budget Comparison Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs bg-black/50 rounded-xl p-3.5 border border-white/15">
+                  <div>
+                    <span className="text-gray-400 block text-[10px] uppercase font-semibold">Total Spent</span>
+                    <span className="text-base font-bold text-rose-400">{displayAmount(catSpent)}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block text-[10px] uppercase font-semibold">Category Budget</span>
+                    <span className="text-base font-bold text-white">
+                      {catBudget > 0 ? displayAmount(catBudget) : 'Not Budgeted'}
+                    </span>
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <span className="text-gray-400 block text-[10px] uppercase font-semibold">Budget Status</span>
+                    {catBudget > 0 ? (
+                      isOverBudget ? (
+                        <span className="text-xs font-bold text-rose-400 block mt-0.5">
+                          ⚠️ Over by {displayAmount(catSpent - catBudget)}
+                        </span>
+                      ) : (
+                        <span className="text-xs font-bold text-emerald-400 block mt-0.5">
+                          ✓ {displayAmount(catBudget - catSpent)} left
+                        </span>
+                      )
+                    ) : (
+                      <span className="text-xs text-gray-400 block mt-0.5">No limit set</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Budget Progress Bar */}
+                {catBudget > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[11px] text-gray-300">
+                      <span>Budget Usage</span>
+                      <span className="font-semibold text-white">
+                        {Math.round((catSpent / catBudget) * 100)}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-white/10 h-2 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          isOverBudget ? 'bg-rose-500' : 'bg-emerald-400'
+                        }`}
+                        style={{ width: `${Math.min(100, Math.round((catSpent / catBudget) * 100))}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* High Contrast Transactions List */}
+                <div className="space-y-2 pt-1">
+                  <span className="text-xs font-semibold text-gray-200 uppercase tracking-wider block">
+                    Recorded Transactions
+                  </span>
+                  {catTransactions.length === 0 ? (
+                    <p className="text-xs text-gray-400 py-3 text-center">No transactions recorded for this category.</p>
+                  ) : (
+                    <div className="max-h-52 overflow-y-auto divide-y divide-white/15 rounded-xl bg-black/40 border border-white/15 px-3">
+                      {catTransactions.map(t => (
+                        <div key={t.id} className="py-2.5 flex items-center justify-between text-xs">
+                          <div>
+                            <p className="font-semibold text-white text-xs">{t.note || selectedCategory}</p>
+                            <p className="text-[11px] text-gray-300 font-medium">{formatDateStr(t.date)} • {t.display_name || t.username}</p>
+                          </div>
+                          <span className="font-bold text-rose-300 text-xs">
+                            - {displayAmount(t.amount)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* 4. Monthly Trend Bar Chart */}
           {trendData?.trends && trendData.trends.length > 0 && (
             <div className="bg-[#121212] rounded-2xl p-4 border border-white/10 shadow-sm space-y-3">
               <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Income vs Expense Trend</span>
@@ -918,7 +1471,15 @@ export default function FinancePage() {
                     <YAxis stroke="#666" fontSize={10} tickFormatter={(v) => `${v/1000000}M`} />
                     <Tooltip 
                       formatter={(val) => [formatRp(val)]}
-                      contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '8px', fontSize: '11px' }}
+                      contentStyle={{ 
+                        backgroundColor: '#181a20', 
+                        border: '1px solid #444', 
+                        borderRadius: '8px', 
+                        fontSize: '11px',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.6)'
+                      }}
+                      itemStyle={{ color: '#ffffff', fontWeight: 600 }}
+                      labelStyle={{ color: '#ffffff', fontWeight: 700 }}
                     />
                     <Legend />
                     <Bar dataKey="income" fill="#10b981" name="Income" radius={[4, 4, 0, 0]} />
