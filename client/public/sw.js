@@ -1,5 +1,5 @@
 // Service Worker for Our Space PWA
-const CACHE_NAME = 'ourspace-cache-v4';
+const CACHE_NAME = 'ourspace-cache-v5';
 
 // Install: activate immediately
 self.addEventListener('install', (event) => {
@@ -64,7 +64,7 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Push Notifications
+// Push Notifications & App Icon Badging
 self.addEventListener('push', (event) => {
   let data = {};
   if (event.data) {
@@ -95,13 +95,39 @@ self.addEventListener('push', (event) => {
     requireInteraction: false
   };
 
+  // Set App Icon Badge count on iPhone and Android home screen icons
+  const updateBadgePromise = (async () => {
+    if ('setAppBadge' in navigator) {
+      try {
+        if (typeof data.badgeCount === 'number' && data.badgeCount > 0) {
+          await navigator.setAppBadge(data.badgeCount);
+        } else {
+          const notifications = await self.registration.getNotifications();
+          const count = Math.max(1, notifications.length + 1);
+          await navigator.setAppBadge(count);
+        }
+      } catch (badgeErr) {
+        console.warn('Could not set app badge from sw:', badgeErr);
+      }
+    }
+  })();
+
   event.waitUntil(
-    self.registration.showNotification(title, options)
+    Promise.all([
+      self.registration.showNotification(title, options),
+      updateBadgePromise
+    ])
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+
+  // Clear or decrement badge count upon clicking notification
+  if ('clearAppBadge' in navigator) {
+    navigator.clearAppBadge().catch(() => {});
+  }
+
   const targetPath = event.notification.data?.url || '/';
   const urlToOpen = new URL(targetPath, self.location.origin).href;
 

@@ -5,12 +5,13 @@ import { useAuth } from '../hooks/useAuth';
 import { getMediaUrl } from '../utils/media';
 import { compressImage } from '../hooks/useImageCompress';
 import VoiceRecorder from '../components/VoiceRecorder';
-import useSWR from 'swr';
+import useSWR, { useSWRConfig } from 'swr';
 
 export default function ChatRoom() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
+  const { mutate: globalMutate } = useSWRConfig();
   
   const [otherUser, setOtherUser] = useState(null);
   const [inputText, setInputText] = useState('');
@@ -48,10 +49,14 @@ export default function ChatRoom() {
     if (messages.length > 0) {
       const hasUnreadFromOther = messages.some(m => m.sender_id === parseInt(id) && !m.is_read);
       if (hasUnreadFromOther) {
-        apiPut(`/api/chat/${id}/read`).catch(console.error);
+        apiPut(`/api/chat/${id}/read`)
+          .then(() => {
+            globalMutate('/api/chat');
+          })
+          .catch(console.error);
       }
     }
-  }, [messages, id]);
+  }, [messages, id, globalMutate]);
 
   const handleSendText = async (e) => {
     e?.preventDefault();

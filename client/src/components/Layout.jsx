@@ -1,7 +1,10 @@
 import { useEffect } from 'react';
 import { Outlet, NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
+import useSWR from 'swr';
+import { apiGet } from '../hooks/useApi';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
+import { updateAppBadge } from '../utils/badging';
 import IosInstallPrompt from './IosInstallPrompt';
 
 const getMediaUrl = (path) => {
@@ -23,18 +26,49 @@ export default function Layout() {
     }
   }, [user?.id, user?.theme_preset, user?.accent_color, user?.bg_color]);
 
+  // Poll unread chat messages for badging & notification counters (every 4 seconds)
+  const { data: chatData } = useSWR(user ? '/api/chat' : null, apiGet, {
+    refreshInterval: 4000,
+    revalidateOnFocus: true
+  });
+
+  const totalUnread = (chatData?.chats || []).reduce(
+    (sum, c) => sum + (parseInt(c.unread_count, 10) || 0),
+    0
+  );
+
+  // Sync PWA App Icon Badge on home screen (iOS 16.4+ and Android)
+  useEffect(() => {
+    updateAppBadge(totalUnread);
+  }, [totalUnread]);
+
+  // Update or clear badge when app gains focus / returns from background
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        updateAppBadge(totalUnread);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
+    };
+  }, [totalUnread]);
+
   // Push subscription sync (runs once per user login, ensures phone is registered on server)
   useEffect(() => {
     if (user && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
       if ('serviceWorker' in navigator && 'PushManager' in window) {
         navigator.serviceWorker.ready.then(async (reg) => {
           try {
-            const { apiGet, apiPost } = await import('../hooks/useApi');
+            const { apiGet: fetchVapid, apiPost: sendSub } = await import('../hooks/useApi');
             let sub = await reg.pushManager.getSubscription();
             
             // If permission is granted but no PushSubscription exists on phone, create one using active VAPID key
             if (!sub) {
-              const { publicKey } = await apiGet('/api/push/vapid-public-key');
+              const { publicKey } = await fetchVapid('/api/push/vapid-public-key');
               if (publicKey) {
                 const padding = '='.repeat((4 - (publicKey.length % 4)) % 4);
                 const base64 = (publicKey + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -50,7 +84,7 @@ export default function Layout() {
             }
 
             if (sub) {
-              await apiPost('/api/push/subscribe', sub).catch(() => {});
+              await sendSub('/api/push/subscribe', sub).catch(() => {});
             }
           } catch (e) {
             console.warn('Push sync note:', e);
@@ -100,8 +134,13 @@ export default function Layout() {
           </div>
           
           <div className="flex items-center gap-2 pointer-events-auto">
-            <Link to="/chat" className="p-2.5 bg-[#1e1e1e]/80 backdrop-blur-md rounded-full text-white hover:bg-white/20 transition-colors border border-white/10 shadow-lg">
+            <Link to="/chat" className="relative p-2.5 bg-[#1e1e1e]/80 backdrop-blur-md rounded-full text-white hover:bg-white/20 transition-colors border border-white/10 shadow-lg">
               <ChatIcon className="w-5 h-5" />
+              {totalUnread > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center shadow-lg border border-black">
+                  {totalUnread > 99 ? '99+' : totalUnread}
+                </span>
+              )}
             </Link>
           </div>
         </header>
@@ -124,15 +163,22 @@ export default function Layout() {
                 to={path}
                 end={path === '/'}
                 className={({ isActive }) =>
-                  `flex items-center gap-4 px-4 py-3 rounded-2xl font-semibold transition-all duration-300 ${
+                  `flex items-center justify-between px-4 py-3 rounded-2xl font-semibold transition-all duration-300 ${
                     isActive
                       ? 'bg-white text-black shadow-lg shadow-white/5'
                       : 'text-gray-400 hover:text-white hover:bg-[#141414]'
                   }`
                 }
               >
-                <Icon className="w-6 h-6" />
-                <span className="text-sm">{label}</span>
+                <div className="flex items-center gap-4">
+                  <Icon className="w-6 h-6" />
+                  <span className="text-sm">{label}</span>
+                </div>
+                {path === '/chat' && totalUnread > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-red-500 text-white text-xs font-bold shadow-md">
+                    {totalUnread > 99 ? '99+' : totalUnread}
+                  </span>
+                )}
               </NavLink>
             ))}
           </nav>
@@ -173,12 +219,19 @@ export default function Layout() {
               to={path}
               end={path === '/'}
               className={({ isActive }) =>
-                `flex flex-col items-center gap-1 transition-all duration-300 ${
+                `relative flex flex-col items-center gap-1 transition-all duration-300 ${
                   isActive ? 'text-white scale-110 drop-shadow-[0_0_8px_rgba(255,255,255,0.4)]' : 'text-gray-500 hover:text-white'
                 }`
               }
             >
-              <Icon className="w-7 h-7" />
+              <div className="relative">
+                <Icon className="w-7 h-7" />
+                {path === '/chat' && totalUnread > 0 && (
+                  <span className="absolute -top-1 -right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center shadow-lg border-2 border-black">
+                    {totalUnread > 99 ? '99+' : totalUnread}
+                  </span>
+                )}
+              </div>
             </NavLink>
           ))}
         </nav>

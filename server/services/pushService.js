@@ -57,13 +57,27 @@ async function sendPushToUser(userId, { title, body, icon = '/app-icon.jpg', url
     const cleanIcon = formatPushMediaUrl(icon);
     const cleanBadge = formatPushMediaUrl(badge);
 
+    // Fetch unread message count for app icon badge indicator
+    let badgeCount = 1;
+    try {
+      const { rows: unreadRows } = await db.query(
+        'SELECT COUNT(*)::int as count FROM messages WHERE receiver_id = $1 AND is_read = false',
+        [userId]
+      );
+      const totalUnread = unreadRows[0]?.count || 0;
+      badgeCount = Math.max(1, totalUnread);
+    } catch (e) {
+      badgeCount = 1;
+    }
+
     const payload = JSON.stringify({
       title: title || 'Our Space ✨',
       body: body || 'You have a new update',
       icon: cleanIcon,
       badge: cleanBadge,
       url,
-      tag: tag || `ourspace-${Date.now()}`
+      tag: tag || `ourspace-${Date.now()}`,
+      badgeCount
     });
 
     const pushOptions = {
