@@ -1,5 +1,5 @@
 // Service Worker for Our Space PWA
-const CACHE_NAME = 'ourspace-cache-v3';
+const CACHE_NAME = 'ourspace-cache-v4';
 
 // Install: activate immediately
 self.addEventListener('install', (event) => {
@@ -66,35 +66,56 @@ self.addEventListener('fetch', (event) => {
 
 // Push Notifications
 self.addEventListener('push', (event) => {
+  let data = {};
   if (event.data) {
     try {
-      const data = event.data.json();
-      const options = {
-        body: data.body || 'New update in Our Space',
-        icon: data.icon || '/app-icon.jpg',
-        badge: '/app-icon.jpg',
-        data: {
-          url: data.url || '/'
-        }
-      };
-      event.waitUntil(
-        self.registration.showNotification(data.title || 'Our Space', options)
-      );
-    } catch (e) {
-      console.warn('Push parse error:', e);
+      data = event.data.json();
+    } catch (err) {
+      try {
+        data = { body: event.data.text() };
+      } catch (textErr) {
+        data = { body: 'New notification from Our Space' };
+      }
     }
+  } else {
+    data = { body: 'New notification from Our Space' };
   }
+
+  const title = data.title || 'Our Space ✨';
+  const options = {
+    body: data.body || 'You have a new update',
+    icon: data.icon || '/app-icon.jpg',
+    badge: data.badge || '/app-icon.jpg',
+    data: {
+      url: data.url || '/'
+    },
+    tag: data.tag || `ourspace-${Date.now()}`,
+    renotify: true,
+    vibrate: [200, 100, 200],
+    requireInteraction: false
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(title, options)
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const urlToOpen = event.notification.data?.url || '/';
+  const targetPath = event.notification.data?.url || '/';
+  const urlToOpen = new URL(targetPath, self.location.origin).href;
+
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       for (let i = 0; i < windowClients.length; i++) {
         const client = windowClients[i];
-        if (client.url === urlToOpen && 'focus' in client) {
-          return client.focus();
+        if ('focus' in client) {
+          if (client.url === urlToOpen) {
+            return client.focus();
+          } else if ('navigate' in client) {
+            client.focus();
+            return client.navigate(urlToOpen);
+          }
         }
       }
       if (clients.openWindow) {

@@ -238,6 +238,15 @@ export default function StoryViewer({ user, onClose, onStoryDeleted }) {
           />
         )}
 
+        {/* Caption overlay for photo/video stories */}
+        {currentStory.text_content && currentStory.media_type !== 'text' && (
+          <div className="absolute bottom-20 left-4 right-4 z-20 pointer-events-none text-center">
+            <span className="inline-block bg-black/60 backdrop-blur-md text-white px-4 py-2 rounded-2xl text-sm font-medium max-w-[90%] break-words shadow-lg border border-white/10">
+              {currentStory.text_content}
+            </span>
+          </div>
+        )}
+
         {currentStory.media_type === 'text' && (
           <div 
             className="w-full h-full flex items-center justify-center p-8 text-center pointer-events-none"

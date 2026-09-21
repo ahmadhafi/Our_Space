@@ -38,7 +38,18 @@ export default function ProfilePage() {
   const [passwordError, setPasswordError] = useState('');
 
   // Push Notifications & iOS Modal
-  const { isSupported, isSubscribed, subscribeUser, unsubscribeUser, sendTestNotification, loading: pushLoading, error: pushError } = usePushNotifications();
+  const { 
+    isSupported, 
+    isSubscribed, 
+    isDeviceRegisteredOnServer, 
+    deviceCount, 
+    subscribeUser, 
+    resyncDevice, 
+    unsubscribeUser, 
+    sendTestNotification, 
+    loading: pushLoading, 
+    error: pushError 
+  } = usePushNotifications();
   const [pushStatusMsg, setPushStatusMsg] = useState('');
   const [showIosModal, setShowIosModal] = useState(false);
 
@@ -455,10 +466,18 @@ export default function ProfilePage() {
                 <p className="text-[11px] text-gray-400">Receive alerts for messages, posts, & finances</p>
               </div>
             </div>
-            <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
-              isSubscribed ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-white/10 text-gray-400'
+            <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-medium ${
+              isSubscribed && isDeviceRegisteredOnServer
+                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                : isSubscribed
+                ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                : 'bg-white/10 text-gray-400'
             }`}>
-              {isSubscribed ? 'Active' : 'Disabled'}
+              {isSubscribed && isDeviceRegisteredOnServer
+                ? `Connected (${deviceCount} device${deviceCount === 1 ? '' : 's'})`
+                : isSubscribed
+                ? 'Tap Re-sync'
+                : 'Disabled'}
             </span>
           </div>
 
@@ -482,19 +501,37 @@ export default function ProfilePage() {
                   type="button"
                   onClick={async () => {
                     setPushStatusMsg('Sending test notification...');
-                    const ok = await sendTestNotification();
-                    if (ok) setPushStatusMsg('Test notification sent! Check your notification bar.');
+                    const res = await sendTestNotification();
+                    if (res?.message) {
+                      setPushStatusMsg(res.message);
+                    }
                   }}
+                  disabled={pushLoading}
                   className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-medium text-xs transition-colors"
                 >
                   Send Test Push
                 </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setPushStatusMsg('Refreshing push keys for this phone...');
+                    const ok = await resyncDevice();
+                    if (ok) setPushStatusMsg('Device re-synced successfully with active VAPID key!');
+                  }}
+                  disabled={pushLoading}
+                  className="px-3 py-2 rounded-xl bg-yellow-400/15 hover:bg-yellow-400/25 text-yellow-300 text-xs font-medium border border-yellow-400/20 transition-colors flex items-center gap-1"
+                >
+                  <span>🔄 Re-sync Device</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={async () => {
                     await unsubscribeUser();
                     setPushStatusMsg('Unsubscribed from notifications.');
                   }}
+                  disabled={pushLoading}
                   className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium transition-colors"
                 >
                   Turn Off
@@ -513,13 +550,13 @@ export default function ProfilePage() {
           </div>
 
           {pushStatusMsg && (
-            <p className="text-xs text-emerald-400 bg-emerald-500/10 p-2 rounded-xl border border-emerald-500/20">
+            <p className="text-xs text-emerald-400 bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 animate-fade-in">
               {pushStatusMsg}
             </p>
           )}
 
           {pushError && (
-            <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-xl border border-red-500/20">
+            <p className="text-xs text-red-400 bg-red-500/10 p-2.5 rounded-xl border border-red-500/20 animate-fade-in">
               {pushError}
             </p>
           )}

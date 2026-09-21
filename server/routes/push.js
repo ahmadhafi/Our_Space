@@ -11,6 +11,46 @@ router.get('/vapid-public-key', (req, res) => {
 
 router.use(authenticateToken);
 
+// Check push subscription status for authenticated user
+router.get('/status', async (req, res) => {
+  try {
+    const db = getDb();
+    const { rows: subscriptions } = await db.query(
+      'SELECT id, subscription, created_at FROM push_subscriptions WHERE user_id = $1',
+      [req.user.id]
+    );
+
+    const targetEndpoint = req.query.endpoint;
+    let isCurrentDeviceRegistered = false;
+
+    const parsedSubscriptions = subscriptions.map(row => {
+      try {
+        const parsed = typeof row.subscription === 'string' ? JSON.parse(row.subscription) : row.subscription;
+        if (targetEndpoint && parsed.endpoint === targetEndpoint) {
+          isCurrentDeviceRegistered = true;
+        }
+        return {
+          id: row.id,
+          endpoint: parsed.endpoint ? parsed.endpoint.slice(0, 45) + '...' : 'unknown',
+          created_at: row.created_at
+        };
+      } catch (e) {
+        return { id: row.id, endpoint: 'corrupted', created_at: row.created_at };
+      }
+    });
+
+    res.json({
+      hasSubscription: subscriptions.length > 0,
+      totalDevices: subscriptions.length,
+      isCurrentDeviceRegistered: targetEndpoint ? isCurrentDeviceRegistered : (subscriptions.length > 0),
+      devices: parsedSubscriptions
+    });
+  } catch (error) {
+    console.error('Error checking push status:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Subscribe to push notifications
 router.post('/subscribe', async (req, res) => {
   const subscription = req.body;
@@ -22,11 +62,22 @@ router.post('/subscribe', async (req, res) => {
     const db = getDb();
     const subString = JSON.stringify(subscription);
 
-    // Delete existing subscription for this endpoint if any
-    await db.query(
-      'DELETE FROM push_subscriptions WHERE user_id = $1 AND subscription LIKE $2',
-      [req.user.id, `%${subscription.endpoint}%`]
+    // Cleanly delete any existing record with the exact same endpoint for this user
+    const { rows: existing } = await db.query(
+      'SELECT id, subscription FROM push_subscriptions WHERE user_id = $1',
+      [req.user.id]
     );
+    for (const row of existing) {
+      try {
+        const parsed = typeof row.subscription === 'string' ? JSON.parse(row.subscription) : row.subscription;
+        if (parsed?.endpoint === subscription.endpoint) {
+          await db.query('DELETE FROM push_subscriptions WHERE id = $1', [row.id]);
+        }
+      } catch (e) {
+        // Corrupted entry cleanup
+        await db.query('DELETE FROM push_subscriptions WHERE id = $1', [row.id]);
+      }
+    }
 
     // Insert new subscription
     await db.query(
@@ -44,15 +95,26 @@ router.post('/subscribe', async (req, res) => {
 // Test push notification endpoint for the authenticated user
 router.post('/test', async (req, res) => {
   try {
-    await sendPushToUser(req.user.id, {
+    const result = await sendPushToUser(req.user.id, {
       title: 'Our Space ✨',
       body: `Push notifications are active for ${req.user.display_name || req.user.username}!`,
       url: '/'
     });
-    res.json({ message: 'Test notification sent!' });
+
+    if (!result || result.totalSubscriptions === 0) {
+      return res.status(400).json({
+        error: 'No push subscriptions found in database for this account. Tap "Re-sync this Device" to register your phone.',
+        diagnostics: result
+      });
+    }
+
+    res.json({
+      message: `Test notification sent to ${result.sentCount} device(s)!`,
+      diagnostics: result
+    });
   } catch (error) {
     console.error('Test push error:', error);
-    res.status(500).json({ error: 'Failed to send test push' });
+    res.status(500).json({ error: 'Failed to send test push: ' + error.message });
   }
 });
 
@@ -62,10 +124,18 @@ router.post('/unsubscribe', async (req, res) => {
   try {
     const db = getDb();
     if (endpoint) {
-      await db.query(
-        'DELETE FROM push_subscriptions WHERE user_id = $1 AND subscription LIKE $2',
-        [req.user.id, `%${endpoint}%`]
+      const { rows: existing } = await db.query(
+        'SELECT id, subscription FROM push_subscriptions WHERE user_id = $1',
+        [req.user.id]
       );
+      for (const row of existing) {
+        try {
+          const parsed = typeof row.subscription === 'string' ? JSON.parse(row.subscription) : row.subscription;
+          if (parsed?.endpoint === endpoint) {
+            await db.query('DELETE FROM push_subscriptions WHERE id = $1', [row.id]);
+          }
+        } catch (e) {}
+      }
     } else {
       await db.query(
         'DELETE FROM push_subscriptions WHERE user_id = $1',

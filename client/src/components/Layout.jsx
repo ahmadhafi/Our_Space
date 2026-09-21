@@ -23,16 +23,34 @@ export default function Layout() {
     }
   }, [user?.id, user?.theme_preset, user?.accent_color, user?.bg_color]);
 
-  // Push subscription sync (runs once per user login, completely isolated)
+  // Push subscription sync (runs once per user login, ensures phone is registered on server)
   useEffect(() => {
     if (user && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
       if ('serviceWorker' in navigator && 'PushManager' in window) {
         navigator.serviceWorker.ready.then(async (reg) => {
           try {
-            const sub = await reg.pushManager.getSubscription();
+            const { apiGet, apiPost } = await import('../hooks/useApi');
+            let sub = await reg.pushManager.getSubscription();
+            
+            // If permission is granted but no PushSubscription exists on phone, create one using active VAPID key
+            if (!sub) {
+              const { publicKey } = await apiGet('/api/push/vapid-public-key');
+              if (publicKey) {
+                const padding = '='.repeat((4 - (publicKey.length % 4)) % 4);
+                const base64 = (publicKey + padding).replace(/-/g, '+').replace(/_/g, '/');
+                const rawData = window.atob(base64);
+                const keyArray = new Uint8Array(rawData.length);
+                for (let i = 0; i < rawData.length; ++i) keyArray[i] = rawData.charCodeAt(i);
+
+                sub = await reg.pushManager.subscribe({
+                  userVisibleOnly: true,
+                  applicationServerKey: keyArray
+                });
+              }
+            }
+
             if (sub) {
-              const { apiPost } = await import('../hooks/useApi');
-              apiPost('/api/push/subscribe', sub).catch(() => {});
+              await apiPost('/api/push/subscribe', sub).catch(() => {});
             }
           } catch (e) {
             console.warn('Push sync note:', e);

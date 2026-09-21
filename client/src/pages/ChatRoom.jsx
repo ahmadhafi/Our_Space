@@ -113,7 +113,35 @@ export default function ChatRoom() {
   };
 
   const formatTime = (dateStr) => {
-    return new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  };
+
+  const getMessageDateDivider = (dateStr) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+
+    const isToday = date.toDateString() === now.toDateString();
+    if (isToday) return 'Today';
+
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const isYesterday = date.toDateString() === yesterday.toDateString();
+    if (isYesterday) return 'Yesterday';
+
+    const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+    if (diffDays < 7 && diffDays > 0) {
+      return date.toLocaleDateString(undefined, { weekday: 'long' });
+    }
+
+    const isSameYear = date.getFullYear() === now.getFullYear();
+    return date.toLocaleDateString(undefined, {
+      day: 'numeric',
+      month: 'long',
+      year: isSameYear ? undefined : 'numeric'
+    });
   };
 
   return (
@@ -145,56 +173,82 @@ export default function ChatRoom() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.map(msg => {
+      <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        {messages.map((msg, idx) => {
           const isMe = msg.sender_id === currentUser.id;
+          const prevMsg = idx > 0 ? messages[idx - 1] : null;
+          const currentDate = new Date(msg.created_at).toDateString();
+          const prevDate = prevMsg ? new Date(prevMsg.created_at).toDateString() : null;
+          const showDateDivider = currentDate !== prevDate;
+
           return (
-            <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-              <div 
-                className={`max-w-[80%] rounded-2xl px-4 py-2 ${
-                  isMe ? 'bg-[#FFFC00] text-black rounded-tr-sm' : 'bg-[#1A1A1A] text-white rounded-tl-sm border border-white/5'
-                }`}
-              >
-                {/* Story Reply Context */}
-                {msg.reply_to_story_url && (
-                  <div className="mb-2 flex flex-col w-48 rounded-xl overflow-hidden bg-black/20 border border-white/10">
-                    <div className="p-2 text-[10px] font-bold opacity-70 uppercase tracking-wider text-center bg-black/40 text-white">
-                      {isMe ? 'Replied to their story' : 'Replied to your story'}
+            <div key={msg.id || idx}>
+              {/* WhatsApp-Style Centered Sticky Date Badge */}
+              {showDateDivider && (
+                <div className="flex justify-center my-3 sticky top-2 z-10 select-none">
+                  <span className="bg-[#1c1e24]/90 backdrop-blur-md text-gray-300 text-[11px] font-semibold px-3.5 py-1 rounded-lg border border-white/10 shadow-sm tracking-wide">
+                    {getMessageDateDivider(msg.created_at)}
+                  </span>
+                </div>
+              )}
+
+              <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} my-1`}>
+                <div 
+                  className={`max-w-[82%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 shadow-sm ${
+                    isMe 
+                      ? 'bg-[#FFFC00] text-black rounded-tr-xs' 
+                      : 'bg-[#1c1f26] text-white rounded-tl-xs border border-white/10'
+                  }`}
+                >
+                  {/* Story Reply Context */}
+                  {msg.reply_to_story_url && (
+                    <div className="mb-2 flex flex-col w-48 rounded-xl overflow-hidden bg-black/20 border border-white/10">
+                      <div className="p-1.5 text-[10px] font-bold opacity-75 uppercase tracking-wider text-center bg-black/40 text-white">
+                        {isMe ? 'Replied to their story' : 'Replied to your story'}
+                      </div>
+                      <div className="w-full aspect-[9/16] bg-black">
+                        {msg.reply_to_story_type === 'video' ? (
+                          <video src={getMediaUrl(msg.reply_to_story_url)} className="w-full h-full object-cover" muted loop playsInline autoPlay />
+                        ) : (
+                          <img src={getMediaUrl(msg.reply_to_story_url)} className="w-full h-full object-cover" alt="Story" />
+                        )}
+                      </div>
                     </div>
-                    <div className="w-full aspect-[9/16] bg-black">
-                      {msg.reply_to_story_type === 'video' ? (
-                        <video src={getMediaUrl(msg.reply_to_story_url)} className="w-full h-full object-cover" muted loop playsInline autoPlay />
-                      ) : (
-                        <img src={getMediaUrl(msg.reply_to_story_url)} className="w-full h-full object-cover" alt="Story" />
+                  )}
+
+                  {/* Media */}
+                  {msg.media_type === 'image' && !msg.reply_to_story_url && (
+                    <img src={getMediaUrl(msg.file_path)} alt="Attached" className="rounded-xl mb-1.5 max-w-full max-h-[360px] object-cover" />
+                  )}
+                  {msg.media_type === 'video' && !msg.reply_to_story_url && (
+                    <video src={getMediaUrl(msg.file_path)} controls className="rounded-xl mb-1.5 max-w-full max-h-[300px]" />
+                  )}
+                  {msg.media_type === 'audio' && (
+                    <audio src={getMediaUrl(msg.file_path)} controls className="mb-1.5 max-w-[220px]" />
+                  )}
+
+                  {/* Text & WhatsApp-style bottom timestamp */}
+                  <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-0.5">
+                    {msg.text && (
+                      <p className="whitespace-pre-wrap break-words text-sm leading-relaxed flex-1 mr-1">
+                        {msg.text}
+                      </p>
+                    )}
+
+                    <div className={`flex items-center gap-1 text-[10px] select-none ml-auto shrink-0 ${isMe ? 'text-black/60' : 'text-gray-400'}`}>
+                      <span>{formatTime(msg.created_at)}</span>
+                      {isMe && (
+                        <span 
+                          className={`font-bold tracking-tighter text-[11px] ${
+                            msg.is_read ? 'text-[#0284c7]' : 'text-black/40'
+                          }`}
+                          title={msg.is_read ? 'Read' : 'Sent'}
+                        >
+                          {msg.is_read ? '✔✔' : '✔'}
+                        </span>
                       )}
                     </div>
                   </div>
-                )}
-
-                {/* Media */}
-                {msg.media_type === 'image' && !msg.reply_to_story_url && (
-                  <img src={getMediaUrl(msg.file_path)} alt="Attached" className="rounded-xl mb-2 max-w-full" />
-                )}
-                {msg.media_type === 'video' && !msg.reply_to_story_url && (
-                  <video src={getMediaUrl(msg.file_path)} controls className="rounded-xl mb-2 max-w-full max-h-[300px]" />
-                )}
-                {msg.media_type === 'audio' && (
-                  <audio src={getMediaUrl(msg.file_path)} controls className="mb-2 max-w-[200px]" />
-                )}
-
-                {/* Text */}
-                {msg.text && (
-                  <p className="whitespace-pre-wrap break-words">{msg.text}</p>
-                )}
-
-                {/* Time & Read Receipt */}
-                <div className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${isMe ? 'text-black/60' : 'text-gray-500'}`}>
-                  <span>{formatTime(msg.created_at)}</span>
-                  {isMe && (
-                    <span className={msg.is_read ? 'text-blue-600' : 'text-black/40'}>
-                      {msg.is_read ? '✔✔' : '✔'}
-                    </span>
-                  )}
                 </div>
               </div>
             </div>

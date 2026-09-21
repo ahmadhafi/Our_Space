@@ -13,7 +13,7 @@ export default function FeedPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [viewingStoryUser, setViewingStoryUser] = useState(null);
-  const [isCreatingStory, setIsCreatingStory] = useState(false);
+  const [storyCreationMode, setStoryCreationMode] = useState(null);
   const [refreshStoriesCounter, setRefreshStoriesCounter] = useState(0);
 
   const fetchPosts = useCallback(async (pageNum, append = false) => {
@@ -58,7 +58,7 @@ export default function FeedPage() {
       <StoryTray 
         key={refreshStoriesCounter}
         onStoryClick={(user) => setViewingStoryUser(user)} 
-        onCreateClick={() => setIsCreatingStory(true)} 
+        onCreateClick={(mode = 'camera') => setStoryCreationMode(mode)} 
       />
 
       {viewingStoryUser && (
@@ -72,10 +72,14 @@ export default function FeedPage() {
         />
       )}
 
-      {isCreatingStory && (
+      {storyCreationMode && (
         <CreateStory 
-          onClose={() => setIsCreatingStory(false)} 
-          onCreated={() => setRefreshStoriesCounter(prev => prev + 1)} 
+          initialMode={storyCreationMode}
+          onClose={() => setStoryCreationMode(null)} 
+          onCreated={() => {
+            setStoryCreationMode(null);
+            setRefreshStoriesCounter(prev => prev + 1);
+          }} 
         />
       )}
 
