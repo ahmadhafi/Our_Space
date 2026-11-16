@@ -13,6 +13,5 @@ yarn-debug.log*
 yarn-error.log*
 .vercel/
 scratch/
-cpanel-deploy.zip
 uploads/*
 !uploads/.gitkeep
