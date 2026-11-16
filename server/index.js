@@ -102,7 +102,12 @@ try {
 } catch (e) {
   console.warn('[Our Space] Uploads directory note:', e.message);
 }
+const serverUploadsPath = path.join(__dirname, 'uploads');
 app.use('/uploads', express.static(uploadsPath, {
+  maxAge: '1d',
+  etag: true
+}));
+app.use('/uploads', express.static(serverUploadsPath, {
   maxAge: '1d',
   etag: true
 }));
