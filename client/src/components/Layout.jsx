@@ -142,6 +142,14 @@ export default function Layout() {
                 </span>
               )}
             </Link>
+            <button
+              onClick={handleLogout}
+              className="p-2.5 bg-[#1e1e1e]/80 backdrop-blur-md rounded-full text-gray-400 hover:text-red-400 hover:bg-white/10 transition-colors border border-white/10 shadow-lg"
+              title="Logout"
+              aria-label="Logout"
+            >
+              <LogoutIcon className="w-5 h-5" />
+            </button>
           </div>
         </header>
         )}
