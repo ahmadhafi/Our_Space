@@ -1,0 +1,26 @@
+# ================================================
+# Our Space — cPanel / LiteSpeed / Apache Config
+# ================================================
+
+# 1. Force HTTPS
+RewriteEngine On
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# 2. Allow large media uploads (up to 60MB)
+LimitRequestBody 62914560
+
+# 3. Security Headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>
+
+# Note: When you configure "Setup Node.js App" in cPanel,
+# cPanel will automatically append its CloudLinux Passenger directives below:
+# PassengerAppRoot "/home/username/ourspace"
+# PassengerBaseURI "/"
+# PassengerNodejs "/home/username/nodevenv/ourspace/20/bin/node"
+# PassengerAppType node
+# PassengerStartupFile app.js

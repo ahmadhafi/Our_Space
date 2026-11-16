@@ -4,7 +4,7 @@ const { getDb } = require('../db/connection');
 const { requireAuth } = require('../middleware/auth');
 const { upload } = require('../middleware/upload');
 const { sendPushToPartner } = require('../services/pushService');
-const { put } = require('@vercel/blob');
+const { saveMedia } = require('../services/storage');
 const fs = require('fs');
 
 // Fetch all active stories
@@ -63,17 +63,7 @@ router.post('/', requireAuth, upload.single('media'), async (req, res, next) => 
     let file_path = null;
 
     if (req.file) {
-      if (process.env.VERCEL) {
-        // Upload to Vercel Blob
-        const fileBuffer = req.file.buffer;
-        const blob = await put(`stories/${Date.now()}-${req.file.originalname}`, fileBuffer, {
-          access: 'public',
-          token: process.env.BLOB_READ_WRITE_TOKEN
-        });
-        file_path = blob.url;
-      } else {
-        file_path = req.file.filename;
-      }
+      file_path = await saveMedia('stories', req.file.originalname, req.file.buffer);
     }
 
     // Insert with expiration set to 24 hours from now

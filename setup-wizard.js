@@ -82,7 +82,7 @@ async function main() {
   console.log('║     First-run account configuration      ║');
   console.log('╚══════════════════════════════════════════╝\n');
 
-  const uploadsPath = process.env.UPLOADS_PATH || '/var/data/ourspace/uploads';
+  const uploadsPath = process.env.UPLOADS_PATH || path.join(__dirname, 'uploads');
 
   // Step 1: Create directories
   console.log('📁 Step 1: Creating data directories...');

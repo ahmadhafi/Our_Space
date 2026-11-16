@@ -9,7 +9,7 @@ const { body, param, validationResult } = require('express-validator');
 const { getDb } = require('../db/connection');
 const { authenticateToken } = require('../middleware/auth');
 const { upload, validateFileSizes } = require('../middleware/upload');
-const { put, del } = require('@vercel/blob');
+const { saveMedia, deleteMedia } = require('../services/storage');
 const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcrypt');
@@ -138,12 +138,11 @@ router.put('/',
       }
 
       if (req.file) {
-        if (currentUser.avatar && currentUser.avatar.startsWith('http')) {
-          try { await del(currentUser.avatar); } catch (e) { console.error('Blob delete error:', e); }
+        if (currentUser.avatar) {
+          await deleteMedia(currentUser.avatar);
         }
-        const filename = `${Date.now()}-${req.file.originalname}`;
-        const blob = await put(`avatars/${filename}`, req.file.buffer, { access: 'public' });
-        updates.avatar = blob.url;
+        const avatarPath = await saveMedia('avatars', req.file.originalname, req.file.buffer);
+        updates.avatar = avatarPath;
         changes.push('avatar');
       }
 

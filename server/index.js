@@ -93,7 +93,15 @@ app.use('/api', async (req, res, next) => {
 });
 
 // ── Serve uploads ──
-const uploadsPath = process.env.UPLOADS_PATH || (process.env.VERCEL ? '/tmp/uploads' : '/var/data/ourspace/uploads');
+const fs = require('fs');
+const uploadsPath = process.env.UPLOADS_PATH || (process.env.VERCEL ? '/tmp/uploads' : path.join(__dirname, '..', 'uploads'));
+try {
+  if (!fs.existsSync(uploadsPath)) {
+    fs.mkdirSync(uploadsPath, { recursive: true });
+  }
+} catch (e) {
+  console.warn('[Our Space] Uploads directory note:', e.message);
+}
 app.use('/uploads', express.static(uploadsPath, {
   maxAge: '1d',
   etag: true
@@ -164,7 +172,7 @@ if (!process.env.VERCEL) {
   app.listen(PORT, () => {
     console.log(`[Our Space] Server running on port ${PORT}`);
     console.log(`[Our Space] Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`[Our Space] Database: ${process.env.DB_PATH || '/var/data/ourspace/ourspace.db'}`);
+    console.log(`[Our Space] Uploads dir: ${uploadsPath}`);
   });
 }
 

@@ -10,7 +10,7 @@ const { getDb } = require('../db/connection');
 const { authenticateToken } = require('../middleware/auth');
 const { upload, validateFileSizes, getMediaType } = require('../middleware/upload');
 const { sendPushToPartner } = require('../services/pushService');
-const { put, del } = require('@vercel/blob');
+const { saveMedia, deleteMedia } = require('../services/storage');
 const fs = require('fs');
 const path = require('path');
 
@@ -130,12 +130,11 @@ router.post('/',
 
       for (const file of files) {
         const mediaType = getMediaType(file.mimetype);
-        const filename = `${Date.now()}-${file.originalname}`;
-        const blob = await put(`posts/${filename}`, file.buffer, { access: 'public' });
+        const savedPath = await saveMedia('posts', file.originalname, file.buffer);
         
         await db.query(
           'INSERT INTO post_media (post_id, media_type, file_path, original_name) VALUES ($1, $2, $3, $4)',
-          [postId, mediaType, blob.url, file.originalname]
+          [postId, mediaType, savedPath, file.originalname]
         );
       }
 
@@ -215,10 +214,8 @@ router.delete('/:id',
       );
 
       for (const media of mediaFiles) {
-        if (media.file_path.startsWith('http')) {
-          try {
-            await del(media.file_path);
-          } catch (e) { console.error('Blob delete error:', e); }
+        if (media.file_path) {
+          await deleteMedia(media.file_path);
         }
       }
 

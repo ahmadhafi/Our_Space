@@ -4,7 +4,7 @@ const { getDb } = require('../db/connection');
 const { requireAuth } = require('../middleware/auth');
 const { upload } = require('../middleware/upload');
 const { sendPushToUser } = require('../services/pushService');
-const { put } = require('@vercel/blob');
+const { saveMedia } = require('../services/storage');
 const fs = require('fs');
 
 // Get list of recent chats (users we've talked to)
@@ -79,17 +79,7 @@ router.post('/:userId', requireAuth, upload.single('media'), async (req, res, ne
     let file_path = null;
 
     if (req.file) {
-      if (process.env.VERCEL) {
-        // Upload to Vercel Blob
-        const fileBuffer = req.file.buffer;
-        const blob = await put(`chat/${Date.now()}-${req.file.originalname}`, fileBuffer, {
-          access: 'public',
-          token: process.env.BLOB_READ_WRITE_TOKEN
-        });
-        file_path = blob.url;
-      } else {
-        file_path = req.file.filename;
-      }
+      file_path = await saveMedia('chat', req.file.originalname, req.file.buffer);
     }
 
     const result = await db.query(`
@@ -99,10 +89,11 @@ router.post('/:userId', requireAuth, upload.single('media'), async (req, res, ne
     `, [myId, otherId, text || '', media_type || null, file_path, reply_to_story_url || null, reply_to_story_type || null]);
 
     // Send push notification
+    const avatarUrl = req.user.avatar ? (req.user.avatar.startsWith('http') ? req.user.avatar : `/uploads/${req.user.avatar}`) : '/app-icon.jpg';
     sendPushToUser(otherId, {
       title: `${req.user.display_name || req.user.username}`,
       body: text || (media_type ? `Sent a ${media_type}` : 'Sent an attachment'),
-      icon: req.user.avatar ? `/uploads/${req.user.avatar}` : '/app-icon.jpg',
+      icon: avatarUrl,
       url: `/chat/${myId}`
     }).catch(err => console.error('Chat push notification error:', err));
 
